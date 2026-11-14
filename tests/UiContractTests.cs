@@ -144,7 +144,7 @@ internal static class UiContractTests
         Control upgrade = Find(form, "UpgradePageTab");
         Assert(help != null && folder != null && card != null && nav != null && nav.Contains(help) && !card.Contains(help), "help is in page navigation");
         Assert(Find(form, "HelpStrip") == null, "help does not occupy a separate row");
-        Assert(help.Text == "! 操作说明" && help.Size == new Size(130, 40), "help uses the requested exclamation and label");
+        Assert(help.Text == "! 操作说明" && help.Size == new Size(180, 40), "help uses the requested exclamation and label");
         Assert(pack.Size == new Size(180, 40) && upgrade.Size == pack.Size && Math.Abs(pack.Font.Size - 10.5F) < 0.01F &&
             Math.Abs(upgrade.Font.Size - 10.5F) < 0.01F, "main navigation uses uniform large buttons and text");
         Assert(pack.Font.Bold && !upgrade.Font.Bold, "selected page has stronger text");
@@ -231,7 +231,7 @@ internal static class UiContractTests
             Control hint = Find(form, "DragHint_" + type);
             Assert(path.Text == "" && path.ReadOnly && path.AllowDrop, "empty path retains selection behavior " + type);
             Assert(hint != null && hint.Visible && hint.AllowDrop && hint.Parent == path.Parent &&
-                hint.Text == "拖入 BIN 或粘贴路径", "visible drag prompt accepts drops " + type);
+                hint.Text == "拖入固件或粘贴路径", "visible drag prompt accepts drops " + type);
             Assert(hint.Width >= 80 && hint.Height >= hint.Font.Height &&
                 hint.Parent.GetChildAtPoint(new Point(hint.Left + hint.Width / 2, hint.Top + hint.Height / 2)) == hint,
                 "drag prompt is visible above the input " + type + " hint=" + hint.Bounds + " input=" + path.Bounds);
@@ -538,8 +538,8 @@ internal static class UiContractTests
         {
             Application.EnableVisualStyles();
             Assembly app = Assembly.LoadFrom(Path.GetFullPath(args[0]));
-            Assert(app.GetName().Version.ToString() == "0.0.2.0" &&
-                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.2.0",
+            Assert(app.GetName().Version.ToString() == "0.0.3.0" &&
+                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.3.0",
                 "assembly and file version match release");
             foreach (string sound in new[] { "click", "success", "failure" })
                 using (Stream stream = app.GetManifestResourceStream("Sounds." + sound + ".wav"))
@@ -547,11 +547,21 @@ internal static class UiContractTests
             using (Form form = (Form)Activator.CreateInstance(app.GetType("SeccFirmwarePackager.MainForm"), true))
             {
                 form.Show(); Application.DoEvents();
-                Assert(Digest(Find(form, "FtpAddress").Text) == "7ef91abc146ce03ca586e530df0f03a4633df110ebb23e73a4271e5c5375f604", "requested default FTP address");
-                Assert(Digest(Find(form, "FtpUser").Text) == "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "requested default FTP user");
-                Assert(Digest(Find(form, "FtpPassword").Text) == "eb2f983bf53fe54df17ad96abf5ebd0bc414f9493647e244fc4c92f86ac11499" &&
-                    ((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "requested default FTP password is masked");
-                Assert(form.Text.Contains("V0.0.2"), "tool version separated from format");
+                Assert(Find(form, "FtpAddress").Text == "", "FTP address defaults empty");
+                Assert(Find(form, "FtpUser").Text == "", "FTP user defaults empty");
+                Assert(Find(form, "FtpPassword").Text == "" &&
+                    ((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "empty FTP password is masked");
+                Assert(form.Text.Contains("V0.0.3"), "tool version separated from format");
+                MethodInfo applyAddress = form.GetType().GetMethod("ApplyFtpAddress", BindingFlags.Instance | BindingFlags.NonPublic);
+                Find(form, "FtpUser").Text = "synthetic-first";
+                Find(form, "FtpPassword").Text = "synthetic-only";
+                Assert((bool)applyAddress.Invoke(form, new object[] { "ftp://example.invalid/first/", false }), "first FTP address accepted");
+                Assert(Find(form, "FtpUser").Text == "synthetic-first" && Find(form, "FtpPassword").Text == "synthetic-only", "first server keeps newly entered credentials");
+                Assert((bool)applyAddress.Invoke(form, new object[] { "ftp://other.invalid/second/", false }), "changed FTP address accepted");
+                Assert(Find(form, "FtpUser").Text == "" && Find(form, "FtpPassword").Text == "", "changing server clears previous credentials");
+                Find(form, "FtpAddress").Text = "";
+
+                Assert(Find(form, "HelpButton").Size == Find(form, "PackPageTab").Size && Find(form, "HelpButton").Size == Find(form, "UpgradePageTab").Size, "help and page tabs have equal sizes");
                 Assert(Find(form, "HelpButton") != null && Find(form, "HelpButton").Visible, "in-content help entry exists");
                 Control helpButton = Find(form, "HelpButton");
                 Assert(helpButton.Parent.ClientRectangle.Contains(helpButton.Bounds), "help button within parent client bounds");
@@ -596,6 +606,7 @@ internal static class UiContractTests
                     Assert(Find(form, name).Height == 40 && Math.Abs(Find(form, name).Width - Find(form, "AutoLoadButton").Width) <= 1, "uniform primary button " + name + " actual=" + Find(form, name).Size);
                 foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
                 {
+                    Assert(Find(form, "DragHint_" + type).Text == "拖入固件或粘贴路径", "firmware prompt " + type);
                     Assert(Find(form, "Name_" + type).Text == "", "name placeholder not actual input " + type);
                     Assert(Find(form, "Version_" + type).Text == "", "version placeholder not actual input " + type);
                 }

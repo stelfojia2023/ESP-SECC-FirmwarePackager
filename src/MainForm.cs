@@ -35,6 +35,7 @@ namespace SeccFirmwarePackager
         public static readonly Color SurfaceHighlight = Color.FromArgb(215, 255, 255, 255);
         public static readonly Color FieldInset = Color.FromArgb(25, 45, 52, 64);
         public static readonly Color Error = ColorTranslator.FromHtml("#B53239");
+        public static readonly Color HeaderHighlight = ColorTranslator.FromHtml("#E1D59C");
         public static readonly Color Success = ColorTranslator.FromHtml("#1D7858");
     }
 
@@ -258,7 +259,7 @@ namespace SeccFirmwarePackager
 
         public MainForm()
         {
-            Text = "打包工具 · V0.0.2"; Name = "MainForm";
+            Text = "打包工具 · V0.0.3"; Name = "MainForm";
             MinimumSize = new Size(1100, 720);
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
             Size = new Size(Math.Max(1100, Math.Min(1320, work.Width - 24)), Math.Max(720, Math.Min(792, work.Height - 24)));
@@ -267,7 +268,7 @@ namespace SeccFirmwarePackager
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
             Button help = new RaisedButton();
             PreparePageTab(help, "HelpButton", "! 操作说明");
-            help.Size = new Size(130, 40); help.AccessibleName = "操作说明";
+            help.Size = new Size(180, 40); help.AccessibleName = "操作说明";
             help.BackColor = UiColors.ButtonSecondary;
             help.Click += delegate { ShowHelp(); }; tooltips.SetToolTip(help, "操作说明");
             TableLayoutPanel root = new TableLayoutPanel { Name = "MainPages", Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty, BackColor = UiColors.Canvas };
@@ -365,10 +366,10 @@ namespace SeccFirmwarePackager
             ftpAddress.KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; ApplyFtpAddress(ftpAddress.Text, true); } };
             ftpUser.Name = "FtpUser"; ftpUser.AccessibleName = "FTP 用户名";
             ftpPassword.Name = "FtpPassword"; ftpPassword.UseSystemPasswordChar = true; ftpPassword.AccessibleName = "FTP 密码";
-            ftpAddress.Text = "ftp://113.200.149.194/Update/";
-            ftpUser.Text = "test";
-            ftpPassword.Text = "1234.com";
-            ftpAuthority = FtpUploader.ParseAddress(ftpAddress.Text).DirectoryUri.GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped);
+            ftpAddress.Text = "";
+            ftpUser.Text = "";
+            ftpPassword.Text = "";
+            ftpAuthority = null; // First address accepts entered credentials; later server changes clear them.
             ftp.Controls.Add(LabeledLine("URL", new SoftField(ftpAddress, false) { Dock = DockStyle.Fill }), 0, 1);
             ftp.Controls.Add(LabeledLine("用户名", new SoftField(ftpUser, false) { Dock = DockStyle.Fill }), 0, 2);
             ftp.Controls.Add(LabeledLine("密码", new SoftField(ftpPassword, false) { Dock = DockStyle.Fill }), 0, 3);
@@ -560,7 +561,7 @@ namespace SeccFirmwarePackager
             pathField.AllowDrop = true;
             pathField.DragEnter += InputDragEnter;
             pathField.DragDrop += delegate(object sender, DragEventArgs e) { InputDragDrop(row, e); };
-            Label dragHint = new Label { Name = "DragHint_" + type, Text = "拖入 BIN 或粘贴路径", Dock = DockStyle.Fill,
+            Label dragHint = new Label { Name = "DragHint_" + type, Text = "拖入固件或粘贴路径", Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiColors.Muted, BackColor = UiColors.Field, AutoEllipsis = true, AllowDrop = true };
             dragHint.Click += delegate { row.PathBox.Focus(); };
             dragHint.DragEnter += InputDragEnter;
