@@ -176,7 +176,7 @@ namespace SeccFirmwarePackager
             workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55)); workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
             workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 460));
             workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
-            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 270)); scroll.Controls.Add(workspace);
+            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 340)); scroll.Controls.Add(workspace);
             TableLayoutPanel inputs = CardLayout(5); inputs.Name = "InputsCard"; inputs.BackColor = UiColors.Canvas;
             for (int i = 0; i < 5; i++) inputs.RowStyles.Add(new RowStyle(SizeType.Percent, 20));
             workspace.Controls.Add(inputs, 0, 0);
