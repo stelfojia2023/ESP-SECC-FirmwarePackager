@@ -16,8 +16,23 @@ internal static class UiContractTests
         return null;
     }
     private static Control Find(Control root, string name) { return FindTree(root, name); }
+    private static void CheckHelpLayout(Form form)
+    {
+        Control help = Find(form, "HelpButton");
+        Control folder = Find(form, "BrowseFolder");
+        Control card = Find(form, "AutoLoadCard");
+        Assert(help != null && folder != null && card != null && card.Contains(help), "help is inside the upper right card");
+        Assert(Find(form, "HelpStrip") == null, "help does not occupy a separate row");
+        Assert(help.Text == "ⓘ" && help.Size == new Size(30, 25), "help icon and dimensions are preserved");
+        Assert(help.Parent.ClientRectangle.Contains(help.Bounds), "help fits within its row");
+        Rectangle a = help.RectangleToScreen(help.ClientRectangle);
+        Rectangle b = folder.RectangleToScreen(folder.ClientRectangle);
+        Assert(!a.IntersectsWith(b), "help and folder selection do not overlap");
+        Assert(form.RectangleToScreen(form.ClientRectangle).Contains(a), "help is within the window viewport");
+    }
     private static void CheckCompactLayout(Form form)
     {
+        CheckHelpLayout(form);
         Control typeCard = Find(form, "FirmwareCard_ESP32");
         Label type = null;
         foreach (Control c in typeCard.Controls[0].Controls)
@@ -176,13 +191,54 @@ internal static class UiContractTests
                 finally { help.Close(); }
             };
             timer.Start();
-            owner.GetType().GetMethod("ShowHelp", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(owner, null);
+            ((Button)Find(owner, "HelpButton")).PerformClick();
             timer.Stop();
         }
         if (failure != null) throw failure;
         Assert(inspected, "help dialog inspected before close");
         Assert(owner.Bounds == oldBounds && Find(owner, "OutputPath").Text == oldOutput && Find(owner, "ResultDetails").Text == oldResult,
             "closing help preserves window bounds and state");
+    }
+    private static void TestHeaderDialog(Form owner)
+    {
+        Exception failure = null; bool inspected = false;
+        DateTime deadline = DateTime.UtcNow.AddSeconds(5);
+        using (Timer timer = new Timer())
+        {
+            timer.Interval = 100;
+            timer.Tick += delegate
+            {
+                Form viewer = null;
+                foreach (Form open in Application.OpenForms) if (open.Name == "HeaderViewer") { viewer = open; break; }
+                if (viewer == null)
+                {
+                    if (DateTime.UtcNow < deadline) return;
+                    timer.Stop(); failure = new Exception("Header dialog not found within five seconds");
+                    foreach (Form open in Application.OpenForms)
+                        if (open != owner && open.Modal) { open.Close(); break; }
+                    return;
+                }
+                timer.Stop();
+                try
+                {
+                    RichTextBox hex = (RichTextBox)Find(viewer, "HeaderHex");
+                    Assert(viewer.Modal && hex != null && hex.ReadOnly && hex.Lines.Length == 256, "header button opens read-only full header");
+                    int glyph = TextRenderer.MeasureText("|", hex.Font, Size.Empty,
+                        TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
+                    int right = hex.GetPositionFromCharIndex(hex.Lines[0].Length - 1).X + glyph;
+                    Assert(right <= hex.ClientSize.Width && hex.ClientSize.Width - right <= Math.Max(32, hex.Font.Height * 2),
+                        "opened header dialog shows full row without excess right margin");
+                    inspected = true;
+                }
+                catch (Exception ex) { failure = ex; }
+                finally { viewer.Close(); }
+            };
+            timer.Start();
+            ((Button)Find(owner, "HeaderViewButton")).PerformClick();
+            timer.Stop();
+        }
+        if (failure != null) throw failure;
+        Assert(inspected, "header dialog inspected before close");
     }
     [STAThread]
     private static int Main(string[] args)
@@ -263,6 +319,7 @@ internal static class UiContractTests
                 ((Button)Find(form, "BuildButton")).PerformClick();
                 Assert(File.Exists(package), "fixture package generated");
                 Assert(Find(form, "HeaderViewButton").Enabled, "successful generation enables header viewing");
+                TestHeaderDialog(form);
                 using (Form verificationOnly = (Form)Activator.CreateInstance(form.GetType(), true))
                 {
                     form.GetType().GetMethod("DisplayVerifiedFile", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).Invoke(verificationOnly, new object[] { package });

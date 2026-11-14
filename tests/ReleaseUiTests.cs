@@ -299,6 +299,8 @@ internal static class ReleaseUiTests
             uint id = (uint)process.Id;
             Node inlineUpload = Button(root, "上传到 FTP", 0);
             if (!IsWindowVisible(inlineUpload.Handle)) throw new Exception("FTP upload must be visible inline on startup.");
+            Click(Button(root, "ⓘ", 0).Handle);
+            DismissError(id, "操作说明", "文件与版本");
             Node browseM4 = Button(root, "选择 M4 固件", 0);
             Node dropTarget = EditInRow(root, browseM4, 0);
             RealDrag(dropTarget.Handle, input);
@@ -323,6 +325,8 @@ internal static class ReleaseUiTests
             Click(outputButton.Handle);
             WaitUntil(delegate { return File.Exists(output) && ContainsText(root, "打包并校验成功"); }, "Build did not finish in the release GUI.");
             if (Packager.VerifyFile(output).Entries.Count != 1) throw new Exception("GUI-generated package is invalid.");
+            Click(Button(root, "查看包头", 0).Handle);
+            DismissError(id, "联合包包头 · 4096 字节", "SECCPKG1");
             Click(Button(root, "包校验", 0).Handle);
             ChooseFile(id, "打开并校验联合固件包", output);
             WaitUntil(delegate { return ContainsText(root, "校验通过"); }, "Open and verify did not display success.");
@@ -346,7 +350,7 @@ internal static class ReleaseUiTests
             process.CloseMainWindow();
             if (!process.WaitForExit(10000)) throw new Exception("Release window did not close.");
             if (process.ExitCode != 0) throw new Exception("Release returned nonzero exit code.");
-            Console.WriteLine("PASS delivered EXE: native file drag, browse, default name, missing-version error, save, generate, open, verify" + (args.Length == 3 ? ", previous V1 sample" : "") + " and corrupted-file error");
+            Console.WriteLine("PASS delivered EXE: help, native file drag, browse, default name, missing-version error, save, generate, header dialog, open, verify" + (args.Length == 3 ? ", previous V1 sample" : "") + " and corrupted-file error");
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL release UI " + ex); return 1; }

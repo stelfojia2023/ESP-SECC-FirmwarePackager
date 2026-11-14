@@ -28,7 +28,6 @@ namespace SeccFirmwarePackager
             AutoScaleMode = AutoScaleMode.Dpi;
             StartPosition = FormStartPosition.CenterParent;
             Size = new Size(880, 650);
-            MinimumSize = new Size(730, 450);
             Padding = new Padding(16);
             ShowInTaskbar = false;
 
@@ -58,6 +57,19 @@ namespace SeccFirmwarePackager
             hex.ScrollBars = RichTextBoxScrollBars.Both; hex.BorderStyle = BorderStyle.FixedSingle;
             hex.AccessibleName = "只读包头十六进制和 ASCII 内容";
             hex.Text = formatted; layout.Controls.Add(hex, 0, 2);
+
+            // Size to the actual RichEdit line, accounting for font metrics and window chrome.
+            PerformLayout(); layout.PerformLayout();
+            int lastIndex = hex.Lines[0].Length - 1;
+            Point last = hex.GetPositionFromCharIndex(lastIndex);
+            int glyphWidth = TextRenderer.MeasureText("|", hex.Font, Size.Empty,
+                TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
+            int textWidth = last.X > 0 ? last.X + glyphWidth : TextRenderer.MeasureText(hex.Lines[0], hex.Font,
+                Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
+            int navigationWidth = navigation.Controls[navigation.Controls.Count - 1].Right;
+            int compactWidth = Size.Width - hex.ClientSize.Width + Math.Max(textWidth, navigationWidth) + 12;
+            MinimumSize = new Size(compactWidth, 450);
+            Size = new Size(compactWidth, 650);
         }
 
         public static byte[] ReadHeader(string path)

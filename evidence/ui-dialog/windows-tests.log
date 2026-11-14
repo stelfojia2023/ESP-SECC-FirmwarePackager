@@ -1,0 +1,23 @@
+PASS filename parsing assertions=74
+Desktop capture saved as candidate; inspect for active desktop/occlusion before treating it as visual proof.
+Saved native RichEdit EM_FORMATRANGE evidence (not a desktop screenshot).
+PASS header viewer assertions=4150; bounded-read implementation reviewed separately
+PASS 31 nonempty combinations, alignment, extraction and hashes
+PASS 5,628 KiB budget vector and all five expected offsets
+PASS corruption, structural rejection, firmware/whole MD5, padding and truncation
+PASS all five file hard limits: zero rejected, boundary accepted, boundary+1 rejected
+PASS invalid input, limits, hard file limits, safe output and UTF-8 limits
+PASS assertions=260552
+PASS FTP address parsing, credential masking and encoded characters
+PASS loopback FTP: 226 success and byte match, auth failure, write refusal, final 451 failure and invalid package
+PASS ordinary FTP files: non-BIN, empty, >6 MiB, exact bytes, 226/250, 530/550/451, unreadable and package-path isolation
+PASS FTP assertions=62
+PASS FTP UI: paste parses and masks credentials, confirm upload, loopback success and failure status, server change clears credentials
+PASS visible WinForms UI: button text spacing at default and minimum sizes, 125 percent font metrics, drag handlers, manual input, five-file preview, generate, verify, hard-limit rejection and small window
+Native drag start=95,76 cursor=95,76 source-pid=278112 pointer-pid=278112 foreground=True source-active=True
+Native drag mouse-down event received; source=95,76 target=786,486
+Native drag mouse-up sent
+Native drag result=Copy
+PASS delivered EXE: native file drag, browse, default name, missing-version error, save, generate, open, verify, previous V1 sample and corrupted-file error
+Test evidence: C:\Users\zhangyy\AppData\Local\Temp\secc-packager-tests-0de90fcb1c02447dbd6da10841ea4330
+Run the independent Python verifier separately as described in README.md.

@@ -170,15 +170,12 @@ namespace SeccFirmwarePackager
             Text = "打包工具 · V0.0.1"; Name = "MainForm";
             MinimumSize = new Size(1100, 720);
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
-            Size = new Size(Math.Max(1100, Math.Min(1320, work.Width - 24)), Math.Max(720, Math.Min(820, work.Height - 24)));
+            Size = new Size(Math.Max(1100, Math.Min(1320, work.Width - 24)), Math.Max(720, Math.Min(792, work.Height - 24)));
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei UI", 9.5F); AutoScaleMode = AutoScaleMode.Dpi; BackColor = UiColors.Canvas;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
-            Panel helpStrip = new Panel { Name = "HelpStrip", Dock = DockStyle.Top, Height = 28, BackColor = UiColors.Canvas, Padding = new Padding(0, 1, 18, 2) };
-            Button help = new RaisedButton { Name = "HelpButton", Text = "ⓘ", AccessibleName = "操作说明", Size = new Size(30, 25), Dock = DockStyle.Right };
-            helpStrip.Controls.Add(help);
+            Button help = new RaisedButton { Name = "HelpButton", Text = "ⓘ", AccessibleName = "操作说明", Size = new Size(30, 25), Anchor = AnchorStyles.Right };
             help.Click += delegate { ShowHelp(); }; tooltips.SetToolTip(help, "操作说明");
-            Controls.Add(helpStrip);
             Panel scroll = new Panel { Name = "ContentScroll", Dock = DockStyle.Fill, AutoScroll = true }; Controls.Add(scroll); scroll.BringToFront();
             workspace = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 3,
                 Padding = new Padding(18, 14, 18, 14), Margin = Padding.Empty };
@@ -221,7 +218,12 @@ namespace SeccFirmwarePackager
             TableLayoutPanel load = CardLayout(2); load.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); load.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             TextBox folder = new PlaceholderTextBox { Name = "FolderPath", PlaceholderText = "选择固件文件夹", AccessibleName = "批量加载固件文件夹" };
             Button folderButton = new RaisedButton { Name = "BrowseFolder", Dock = DockStyle.Fill };
-            ConfigureIcon(folderButton, "folder", "选择固件文件夹"); load.Controls.Add(PathLine(folder, folderButton), 0, 0);
+            ConfigureIcon(folderButton, "folder", "选择固件文件夹");
+            TableLayoutPanel folderLine = (TableLayoutPanel)PathLine(folder, folderButton);
+            folderLine.ColumnCount = 3;
+            folderLine.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38));
+            folderLine.Controls.Add(help, 2, 0);
+            load.Controls.Add(folderLine, 0, 0);
             Button autoLoad = MainButton("AutoLoadButton", "一键加载", true);
             Button clearAll = MainButton("ClearAllButton", "一键清理", false);
             clearAll.Click += delegate { ClearAllInputs(); };

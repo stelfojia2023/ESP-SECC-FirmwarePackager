@@ -113,6 +113,20 @@ internal static class HeaderViewerTests
                 TextBox address = (TextBox)form.Controls.Find("HeaderOffset", true)[0];
                 RichTextBox hex = (RichTextBox)form.Controls.Find("HeaderHex", true)[0];
                 Assert(hex.ReadOnly && !hex.WordWrap, "read-only non-wrapping hex");
+                int lastChar = hex.Lines[0].Length - 1;
+                int glyph = TextRenderer.MeasureText("|", hex.Font, Size.Empty,
+                    TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
+                int textRight = hex.GetPositionFromCharIndex(lastChar).X + glyph;
+                Assert(textRight <= hex.ClientSize.Width, "full hex and ASCII row fits without horizontal clipping");
+                Assert(hex.ClientSize.Width - textRight <= Math.Max(32, hex.Font.Height * 2), "header right margin remains compact");
+                Assert(form.MinimumSize.Width == form.Width, "minimum width retains the full header line");
+                FlowLayoutPanel navigation = (FlowLayoutPanel)address.Parent;
+                foreach (Control item in navigation.Controls)
+                    Assert(item.Bounds.Right <= navigation.ClientSize.Width, "navigation remains fully visible");
+                Size originalSize = form.Size;
+                form.Size = form.MinimumSize; Application.DoEvents();
+                Assert(hex.GetPositionFromCharIndex(lastChar).X + glyph <= hex.ClientSize.Width, "header row fits at minimum window size");
+                form.Size = originalSize; Application.DoEvents();
                 MethodInfo jump = typeof(HeaderViewer).GetMethod("JumpToAddress", BindingFlags.Instance | BindingFlags.NonPublic);
                 foreach (int target in new[] { 0, 7, 8, 15, 16, 4095 })
                 {
