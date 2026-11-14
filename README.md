@@ -1,13 +1,13 @@
 > FTP 支持上传文件并查看目标目录；启动时地址、用户名和密码均为空，由用户填写。
 > 新增“设备升级”页面，打包成功后自动关联联合包，也可选择其他 BIN。本地网口和运营平台升级接口尚未接入，“开始升级”暂不可用。
 > **工具版本 V0.0.3**：银白浅灰微光泽卡片、分组操作、动态文件列表、内嵌 FTP 操作区与默认启用音效。[当前视觉规范与设计 tokens](docs/视觉规范.md)，[早期界面记录](docs/UI-V0.0.1.md)。工具版本与包格式 V1 独立。
-> 当前工程版本为 V0.0.3，本次不自动发布 Release。以本次 Windows CI 构建产物为准；仓库内旧 dist 与历史 Release 可能仍为旧版，不应当作 V0.0.3。[本次变更](docs/V0.0.3变更.md) · [版本提交约定](docs/版本约定.md)。
+> 当前工程版本为 V0.0.3，独立 EXE 可从 GitHub Release 下载。[本次变更](docs/V0.0.3变更.md) · [发布验证](docs/V0.0.3发布验证.md) · [版本提交约定](docs/版本约定.md)。
 
 # ESP-SECC 固件联合打包工具 V0.0.3
 
 本工具将 PFC、LLC、M4、PLC、ESP32 中选定的 1～5 份固件打包成一个 BIN，生成时自动校验，可查看本次生成包的包头，也可按需上传到 FTP。交付的 `dist/FirmwarePackager.exe` 是 Windows 10/11 64 位图形程序，不需要安装开发环境。运行依赖 Windows 自带的 .NET Framework 4.x；打包无需联网，FTP 上传需要网络和服务器。
 
-[历史 V0.0.2 Release EXE（不含本次更新）](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/releases/download/v0.0.2/FirmwarePackager.exe) · [下载五类测试 BIN](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/raw/refs/heads/main/test-vectors/five-test-bins.zip)。仓库为私有仓库，需要登录有权限的 GitHub 账号。
+[下载 V0.0.3 Release EXE](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/releases/download/v0.0.3/FirmwarePackager.exe) · [下载五类测试 BIN](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/raw/refs/heads/main/test-vectors/five-test-bins.zip)。仓库为私有仓库，需要登录有权限的 GitHub 账号。
 
 **V1 是候选包格式。当前设备尚未接入联合包解析和多模块升级；候选的 6 MiB 暂存区和 2.5 MiB ESP32 应用槽不是当前设备配置。** 上传仅发送文件到用户指定的 FTP 目录，不烧录设备、不执行升级。
 
