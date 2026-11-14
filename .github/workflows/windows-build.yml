@@ -1,0 +1,50 @@
+name: Windows build and core validation
+on:
+  push:
+    branches: ['main', 'ui/warm-cards-v0.0.1']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build Windows EXE
+        shell: powershell
+        run: ./build.ps1
+      - name: Core, FTP and UI contract checks
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          New-Item -ItemType Directory -Force evidence/ci | Out-Null
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /out:CoreTests.exe (Join-Path $PWD 'src\Packager.cs') (Join-Path $PWD 'tests\CoreTests.cs')
+          if ($LASTEXITCODE) { throw 'Core compile failed' }
+          & ./CoreTests.exe "$env:RUNNER_TEMP/core-results" 2>&1 | Tee-Object evidence/ci/core.log
+          if ($LASTEXITCODE) { throw 'Core tests failed' }
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /main:FtpTests /out:FtpTests.exe (Join-Path $PWD 'src\Packager.cs') (Join-Path $PWD 'src\FtpUploader.cs') (Join-Path $PWD 'tests\FtpTests.cs')
+          if ($LASTEXITCODE) { throw 'FTP compile failed' }
+          & ./FtpTests.exe test-vectors/bundle-m4-esp32-v1.bin "$env:RUNNER_TEMP/ftp-results" 2>&1 | Tee-Object evidence/ci/ftp.log
+          if ($LASTEXITCODE) { throw 'FTP tests failed' }
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:UiContractTests.exe (Join-Path $PWD 'tests\UiContractTests.cs')
+          if ($LASTEXITCODE) { throw 'UI contract compile failed' }
+          & ./UiContractTests.exe dist/FirmwarePackager.exe evidence/ci 2>&1 | Tee-Object evidence/ci/ui-contract.log
+          if ($LASTEXITCODE) { throw 'UI contract tests failed' }
+          python tests/independent_verify.py "$env:RUNNER_TEMP/core-results"
+          if ($LASTEXITCODE) { throw 'Independent verifier failed' }
+          python tests/verify_vector.py test-vectors
+          if ($LASTEXITCODE) { throw 'Reference vector verification failed' }
+          Get-FileHash dist/FirmwarePackager.exe | Format-List | Out-File evidence/ci/SHA256.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: FirmwarePackager-V0.0.1-windows
+          path: |
+            dist/FirmwarePackager.exe
+            evidence/ci/
+          retention-days: 30
