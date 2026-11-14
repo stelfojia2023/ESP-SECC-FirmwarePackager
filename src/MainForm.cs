@@ -284,9 +284,8 @@ namespace SeccFirmwarePackager
             grid.Columns.Add("Type", "类型"); grid.Columns.Add("Name", "名称"); grid.Columns.Add("Version", "版本");
             grid.Columns.Add("Size", "原始大小（字节）"); grid.Columns.Add("Offset", "包内偏移");
             grid.Columns[0].FillWeight = 55; grid.Columns[1].FillWeight = 160;
-            TableLayoutPanel preview = CardLayout(2); preview.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            preview.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); preview.Controls.Add(grid, 0, 0);
-            preview.Controls.Add(FieldLabel("偏移相对于联合 BIN 起点；整包大小包含包头与对齐填充。"), 0, 1);
+            TableLayoutPanel preview = CardLayout(1); preview.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            preview.Controls.Add(grid, 0, 0);
             AddDisclosure(body, 2, "包内容与偏移", preview, 290, "PreviewToggle");
 
             TableLayoutPanel ftp = CardLayout(6);
@@ -378,12 +377,12 @@ namespace SeccFirmwarePackager
             ftpStatus.TextChanged += delegate { UpdateFtpCaption(); };
             FormClosing += FtpFormClosing;
 
-            LinkLabel limits = new LinkLabel { Text = "包格式 V1 · 设备支持与校验说明", Dock = DockStyle.Fill,
+            LinkLabel limits = new LinkLabel { Text = "设备使用注意", Dock = DockStyle.Fill,
                 LinkColor = UiColors.Muted, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(4, 0, 0, 0) };
             limits.LinkClicked += delegate { MessageBox.Show(this,
                 "当前设备尚未接入联合包解析。6 MiB 暂存区与 2.5 MiB ESP32 槽为候选方案，并非已部署的设备配置。\n\n" +
-                "工具版本 V0.0.1 与包格式 V1 相互独立。\n\n整包 MD5 计算时将包头整包 MD5 字段置零，与普通 md5sum 不同。MD5 仅检查一致性，不验证发布者身份。",
-                "设备支持与校验说明", MessageBoxButtons.OK, MessageBoxIcon.Information); };
+                "上传成功不代表设备已完成升级；使用前请确认目标设备支持该文件。",
+                "设备使用注意", MessageBoxButtons.OK, MessageBoxIcon.Information); };
             body.Controls.Add(limits, 0, 4); body.SetColumnSpan(limits, 2);
             RefreshPreview();
         }
@@ -415,7 +414,7 @@ namespace SeccFirmwarePackager
         {
             ftpFile.Text = Path.GetFullPath(path);
             ftpPackageSource = package;
-            ftpSourceKind.Text = package ? "联合包 · 上传前校验 V1 格式" : "本地文件 · 直接上传，不进行联合包校验";
+            ftpSourceKind.Text = package ? "联合包 · 上传前校验" : "本地文件 · 直接上传，不进行联合包校验";
         }
 
         private void UpdateFtpCaption()
@@ -652,7 +651,7 @@ namespace SeccFirmwarePackager
                 foreach (FirmwareEntry entry in plan.Entries)
                     grid.Rows.Add(entry.Type, entry.Name, entry.Version, entry.Size.ToString("N0"), "0x" + entry.Offset.ToString("X6"));
                 StringBuilder text = new StringBuilder();
-                text.AppendFormat("预计联合包：{0:N0} 字节（0x{0:X}），含包头和对齐填充。", plan.TotalSize);
+                text.AppendFormat("预计联合包：{0:N0} 字节。", plan.TotalSize);
                 foreach (string warning in plan.Warnings) text.Append("  警告：").Append(warning);
                 status.Text = text.ToString();
                 overview.Text = plan.Entries.Count + " 类固件  ·  " + (plan.TotalSize / 1024.0).ToString("N1") + " KiB";
@@ -722,7 +721,7 @@ namespace SeccFirmwarePackager
                 FtpLocation location = FtpUploader.ParseAddress(ftpAddress.Text);
                 Uri destination = FtpUploader.FileUri(location, Path.GetFileName(ftpFile.Text));
                 DialogResult answer = MessageBox.Show(ftpDialog,
-                    "本地文件：\n" + ftpFile.Text + "\n\n" + (ftpPackageSource ? "联合包：上传前校验 V1 格式。" : "普通文件：直接上传，不进行联合包校验。") + "\n\n即将上传至：\n" + destination.AbsoluteUri +
+                    "本地文件：\n" + ftpFile.Text + "\n\n" + (ftpPackageSource ? "联合包：上传前校验。" : "普通文件：直接上传，不进行联合包校验。") + "\n\n即将上传至：\n" + destination.AbsoluteUri +
                     "\n\n普通 FTP 明文传输账号、密码和文件；服务器同名文件可能被覆盖。确定上传？",
                     "确认 FTP 上传", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
                 if (answer != DialogResult.Yes) return;
@@ -837,7 +836,7 @@ namespace SeccFirmwarePackager
         {
             using (OpenFileDialog dialog = new OpenFileDialog())
             {
-                dialog.Title = "打开并校验 V1 联合固件包";
+                dialog.Title = "打开并校验联合固件包";
                 dialog.Filter = "联合固件包 (*.bin)|*.bin|所有文件 (*.*)|*.*";
                 dialog.CheckFileExists = true;
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -862,16 +861,13 @@ namespace SeccFirmwarePackager
             StringBuilder text = new StringBuilder();
             text.AppendLine(result);
             text.AppendLine("文件：" + path);
-            text.AppendLine("包格式：SECCPKG1 / V1；包头：4096 字节");
-            text.AppendFormat("联合包大小：{0:N0} 字节（0x{0:X}）；固件数量：{1}\r\n", report.TotalSize, report.Entries.Count);
-            text.AppendLine("整包 MD5（字段置零规则）：" + Packager.Hex(report.PackageMd5));
+            text.AppendFormat("联合包大小：{0:N0} 字节；固件数量：{1}\r\n", report.TotalSize, report.Entries.Count);
             foreach (FirmwareEntry entry in report.Entries)
             {
                 text.AppendFormat("\r\n{0}  名称：{1}  版本：{2}\r\n", entry.Type, entry.Name, entry.Version);
-                text.AppendFormat("  包内偏移：0x{0:X6}  原始大小：{1:N0} 字节  原始固件 MD5：{2}\r\n", entry.Offset, entry.Size, Packager.Hex(entry.Md5));
+                text.AppendFormat("  大小：{0:N0} 字节\r\n", entry.Size);
             }
             foreach (string warning in report.Warnings) text.AppendLine("\r\n警告：" + warning);
-            text.AppendLine("\r\n整包 MD5 不等于直接对最终 BIN 运行普通 md5sum；MD5 不验证发布者身份。");
             sounds.Play("success");
             details.Text = text.ToString();
             details.SelectionStart = 0;

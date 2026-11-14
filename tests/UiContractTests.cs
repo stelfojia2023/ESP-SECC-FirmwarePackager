@@ -87,6 +87,10 @@ internal static class UiContractTests
                 ((TextBox)Find(form, "OutputPath")).Text = package;
                 ((Button)Find(form, "BuildButton")).PerformClick();
                 Assert(File.Exists(package), "fixture package generated");
+                string result = Find(form, "ResultDetails").Text;
+                Assert(result.Contains("打包并校验成功") && result.Contains(package) && result.Contains("联合包大小"), "useful result retained");
+                Assert(!result.Contains("包格式") && !result.Contains("包头") && !result.Contains("MD5") && !result.Contains("0x"), "format internals removed from success report");
+                Assert(!Find(form, "FtpSourceKind").Text.Contains("V1"), "FTP mode has no format version");
                 Assert(((TextBox)Find(form, "FtpFilePath")).Text == package, "generated package is default FTP source");
                 WithFtp(form, delegate(Form dialog)
                 {

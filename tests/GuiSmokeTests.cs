@@ -219,7 +219,7 @@ internal static class GuiSmokeTests
                         Find<Button>(form, "BuildButton").PerformClick();
                         if (!File.Exists(output)) throw new Exception("Generate button did not create the package");
                         string resultText = Find<TextBox>(form, "ResultDetails").Text;
-                        if (!resultText.Contains("打包并校验成功") || !resultText.Contains("V000B01D15") || !resultText.Contains("整包 MD5"))
+                        if (!resultText.Contains("打包并校验成功") || !resultText.Contains("V000B01D15") || !resultText.Contains("联合包大小"))
                             throw new Exception("Generated package details not displayed");
                         form.DisplayVerifiedFile(output);
                         resultText = Find<TextBox>(form, "ResultDetails").Text;
