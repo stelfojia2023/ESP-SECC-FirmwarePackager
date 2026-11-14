@@ -9,6 +9,117 @@ using System.Windows.Forms;
 // In-process form contract and render checks. NOT a substitute for interactive Windows release tests.
 internal static class UiContractTests
 {
+    private static double ChannelLuminance(byte channel)
+    {
+        double value = channel / 255.0;
+        return value <= 0.04045 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
+    }
+    private static double Luminance(Color color)
+    { return 0.2126 * ChannelLuminance(color.R) + 0.7152 * ChannelLuminance(color.G) + 0.0722 * ChannelLuminance(color.B); }
+    private static double Contrast(Color a, Color b)
+    { double x = Luminance(a), y = Luminance(b); return (Math.Max(x, y) + 0.05) / (Math.Min(x, y) + 0.05); }
+    private static Color SkinColor(Type tokens, string name)
+    {
+        FieldInfo field = tokens.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+        Assert(field != null && field.FieldType == typeof(Color), "skin token exists " + name);
+        return (Color)field.GetValue(null);
+    }
+    private static void PaintSkinControl(Control control, Bitmap image)
+    {
+        using (Graphics graphics = Graphics.FromImage(image))
+        using (PaintEventArgs paint = new PaintEventArgs(graphics, new Rectangle(Point.Empty, image.Size)))
+        {
+            control.GetType().GetMethod("OnPaintBackground", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(control, new object[] { paint });
+            control.GetType().GetMethod("OnPaint", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(control, new object[] { paint });
+        }
+    }
+    private static void TestSilverSkin(Assembly app, Form form, string work)
+    {
+        Type tokens = app.GetType("SeccFirmwarePackager.UiColors", true);
+        string[] tokenNames = { "Canvas", "Card", "Field", "Ink", "Muted", "Border", "ButtonPrimary", "ButtonSecondary", "ButtonIcon" };
+        System.Collections.Generic.Dictionary<string, Color> colors = new System.Collections.Generic.Dictionary<string, Color>();
+        StringBuilder report = new StringBuilder();
+        report.AppendLine("Contrast uses sRGB relative luminance. Renders below are synthetic pixel/font-scaled control paint tests, NOT actual Windows OS DPI switching.");
+        foreach (string name in tokenNames)
+        {
+            colors[name] = SkinColor(tokens, name);
+            Assert(colors[name].A == 255, "opaque skin token " + name);
+            report.AppendLine(name + "=" + ColorTranslator.ToHtml(colors[name]));
+        }
+        Color error = SkinColor(tokens, "Error");
+        foreach (string surface in new[] { "Canvas", "Card", "Field" })
+        {
+            foreach (string text in new[] { "Ink", "Muted" })
+            {
+                double ratio = Contrast(colors[text], colors[surface]);
+                report.AppendLine(text + "/" + surface + "=" + ratio.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+                Assert(ratio >= 4.5, "text contrast >=4.5 " + text + "/" + surface + " actual=" + ratio);
+            }
+            double errorRatio = Contrast(error, colors[surface]);
+            report.AppendLine("Error/" + surface + "=" + errorRatio.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+            Assert(errorRatio >= 4.5, "error contrast >=4.5 on " + surface);
+        }
+        foreach (string surface in new[] { "ButtonPrimary", "ButtonSecondary", "ButtonIcon" })
+        {
+            string text = surface == "ButtonIcon" ? "Muted" : "Ink";
+            double ratio = Contrast(colors[text], colors[surface]);
+            report.AppendLine(text + "/" + surface + "=" + ratio.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+            Assert(ratio >= 4.5, "actual button text contrast >=4.5 " + text + "/" + surface);
+        }
+        foreach (int dpi in new[] { 96, 120, 144, 192 })
+        {
+            float scale = dpi / 96F;
+            using (Control card = (Control)Activator.CreateInstance(app.GetType("SeccFirmwarePackager.SectionCard"), true))
+            using (Control primary = (Control)Activator.CreateInstance(app.GetType("SeccFirmwarePackager.RaisedButton"), true))
+            using (Control secondary = (Control)Activator.CreateInstance(app.GetType("SeccFirmwarePackager.RaisedButton"), true))
+            using (Font font = new Font(form.Font.FontFamily, form.Font.SizeInPoints * 96F / 72F * scale, FontStyle.Regular, GraphicsUnit.Pixel))
+            {
+                card.Size = new Size((int)(440 * scale), (int)(140 * scale)); card.BackColor = colors["Canvas"];
+                Control[] buttons = { primary, secondary };
+                for (int i = 0; i < buttons.Length; i++)
+                {
+                    Control button = buttons[i]; button.Font = font; button.Text = i == 0 ? "包生成" : "包校验";
+                    button.BackColor = colors[i == 0 ? "ButtonPrimary" : "ButtonSecondary"]; button.ForeColor = colors["Ink"];
+                    button.Size = new Size((int)(180 * scale), (int)(40 * scale));
+                    button.Location = new Point((int)((24 + i * 200) * scale), (int)(45 * scale));
+                    card.Controls.Add(button);
+                    Assert(card.ClientRectangle.Contains(button.Bounds), "button within simulated card " + dpi + "/" + i);
+                    using (Bitmap bitmap = new Bitmap(button.Width, button.Height))
+                    {
+                        bitmap.SetResolution(dpi, dpi);
+                        using (Graphics graphics = Graphics.FromImage(bitmap))
+                        {
+                            SizeF text = graphics.MeasureString(button.Text, font);
+                            Assert(text.Width < button.Width - 12 * scale && text.Height < button.Height - 8 * scale,
+                                "button text fits simulated DPI " + dpi + "/" + i);
+                        }
+                        PaintSkinControl(button, bitmap);
+                        using (Bitmap parentSurface = new Bitmap(card.Width, card.Height))
+                        {
+                            parentSurface.SetResolution(dpi, dpi); PaintSkinControl(card, parentSurface);
+                            Color expected = parentSurface.GetPixel(button.Left, button.Top);
+                            Color actual = bitmap.GetPixel(0, 0);
+                            Assert(Math.Abs(actual.R - expected.R) <= 2 && Math.Abs(actual.G - expected.G) <= 2 && Math.Abs(actual.B - expected.B) <= 2,
+                                "button corner preserves actual parent surface " + dpi + "/" + i);
+                        }
+                        bitmap.Save(Path.Combine(work, "skin-button-" + i + "-simulated-" + dpi + "dpi.png"));
+                    }
+                }
+                using (Bitmap bitmap = new Bitmap(card.Width, card.Height))
+                {
+                    bitmap.SetResolution(dpi, dpi); PaintSkinControl(card, bitmap);
+                    using (Graphics graphics = Graphics.FromImage(bitmap))
+                        foreach (Control button in buttons)
+                            using (Bitmap face = new Bitmap(button.Width, button.Height))
+                            { face.SetResolution(dpi, dpi); PaintSkinControl(button, face); graphics.DrawImageUnscaled(face, button.Location); }
+                    Assert(bitmap.GetPixel(0, 0).ToArgb() == colors["Canvas"].ToArgb(), "card paint stays inside corner bounds " + dpi);
+                    bitmap.Save(Path.Combine(work, "skin-card-simulated-" + dpi + "dpi.png"));
+                }
+            }
+            report.AppendLine("Rendered card and primary/secondary buttons at synthetic " + dpi + " DPI; bounds and text fit checked.");
+        }
+        File.WriteAllText(Path.Combine(work, "skin-validation.txt"), report.ToString());
+    }
     private static int assertions;
     private static void Assert(bool value, string message) { assertions++; if (!value) throw new Exception(message); }
     private static string Digest(string value)
@@ -103,10 +214,17 @@ internal static class UiContractTests
     {
         Color canvas = form.BackColor;
         Control card = Find(form, "FirmwareCard_PFC");
-        Color cardColor = card.Controls[0].BackColor;
+        Type tokens = form.GetType().Assembly.GetType("SeccFirmwarePackager.UiColors", true);
+        Color cardColor = SkinColor(tokens, "Card");
         Color fieldColor = Find(form, "Path_PFC").BackColor;
-        Assert(cardColor.R > fieldColor.R && fieldColor.R > canvas.R && cardColor.R < 255, "warm, distinct card and field layers");
-        Assert(cardColor.R >= cardColor.G && cardColor.G >= cardColor.B && fieldColor.R >= fieldColor.G && fieldColor.G >= fieldColor.B, "card and field are warm neutrals");
+        Assert(canvas.ToArgb() == SkinColor(tokens, "Canvas").ToArgb() && fieldColor.ToArgb() == SkinColor(tokens, "Field").ToArgb(),
+            "actual canvas and field use silver skin tokens");
+        Assert(Luminance(cardColor) > Luminance(fieldColor) && Luminance(fieldColor) > Luminance(canvas),
+            "silver card, field and canvas retain distinct lightness layers");
+        foreach (Color surface in new[] { canvas, cardColor, fieldColor })
+            Assert(Math.Max(surface.R, Math.Max(surface.G, surface.B)) - Math.Min(surface.R, Math.Min(surface.G, surface.B)) <= 16,
+                "silver surfaces remain low-chroma neutrals");
+        Assert(card.Controls[0].BackColor.A == 0, "card inner layout preserves parent gradient instead of opaque flat fill");
         foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
         {
             TextBox path = (TextBox)Find(form, "Path_" + type);
@@ -495,6 +613,7 @@ internal static class UiContractTests
                     ((TextBox)Find(form, "FtpPassword")).Clear();
                 }
                 string work = Path.GetFullPath(args[1]); Directory.CreateDirectory(work);
+                TestSilverSkin(app, form, work);
                 string input = Path.Combine(work, "contract-input.bin");
                 string package = Path.Combine(work, "contract-package-" + Guid.NewGuid().ToString("N") + ".bin");
                 string ordinary = Path.Combine(work, "ordinary.txt");
@@ -627,3 +746,4 @@ internal static class UiContractTests
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
 }
+

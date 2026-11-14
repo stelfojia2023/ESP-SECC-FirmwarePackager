@@ -13,6 +13,30 @@ namespace SeccFirmwarePackager
 {
     internal enum ButtonGlyph { None, Folder, Clear, FolderDownload }
 
+    // Authoritative button paint metrics. Distances are device pixels except
+    // GlyphSize, which is scaled from BaseDpi; glyph coordinates are fractions.
+    internal static class UiMetrics
+    {
+        public const int ButtonMinSize = 8, ButtonLeft = 1, ButtonTop = 1;
+        public const int ButtonPressOffset = 2, ButtonWidthTrim = 4, ButtonHeightTrim = 6;
+        public const int ButtonCornerDiameter = 12, ButtonRimInset = 1, ButtonRimMinSize = 2, ButtonFocusInset = 4;
+        public const float ButtonStroke = 1F;
+        public const float DisabledBlend = .65F, HoverBlend = .10F;
+        public const float TopBlend = .48F, PressedTopBlend = .08F, BottomBlend = .08F, PressedBottomBlend = .12F;
+        public const float EdgeBlend = .15F, PressedEdgeBlend = .24F;
+        public const int ShadowLayers = 3, PressedShadowLayers = 1, ShadowStep = 1;
+        public const int ShadowOuterAlpha = 6, ShadowAlphaStep = 5, PressedShadowAlpha = 12;
+        public const int RimTopAlpha = 220, PressedRimTopAlpha = 100, RimBottomAlpha = 18;
+        public const float BaseDpi = 96F, GlyphSize = 22F, GlyphPadding = 8F, GlyphMinSize = 4F, GlyphTextGap = 12F;
+        public const float GlyphMinStroke = 1.2F, GlyphStrokeDivisor = 14F;
+        public const float CrossNear = .22F, CrossFar = .78F;
+        public const float FolderLeft = .08F, FolderBottom = .82F, FolderTop = .17F;
+        public const float FolderTabEnd = .36F, FolderShoulder = .47F, FolderBodyTop = .31F, FolderRight = .91F;
+        public const float ArrowX = .65F, ArrowTop = .46F, ArrowBottom = .88F;
+        public const float ArrowLeft = .50F, ArrowRight = .80F, ArrowShoulder = .73F;
+        public const int ArcLeft = 180, ArcTop = 270, ArcRight = 0, ArcBottom = 90, ArcSweep = 90;
+    }
+
     // Retains native Button keyboard activation, accessibility and Click semantics.
     internal sealed class RaisedButton : Button
     {
@@ -48,79 +72,122 @@ namespace SeccFirmwarePackager
         protected override void OnLostFocus(EventArgs e) { pressed = false; Invalidate(); base.OnLostFocus(e); }
         protected override void OnPaint(PaintEventArgs e)
         {
-            if (Width < 8 || Height < 8) return;
-            e.Graphics.Clear(Parent == null ? UiColors.Canvas : Parent.BackColor);
+            if (Width < UiMetrics.ButtonMinSize || Height < UiMetrics.ButtonMinSize) return;
+            e.Graphics.Clear(OpaqueBackground());
+            if (Parent != null)
+            {
+                GraphicsState backgroundState = e.Graphics.Save();
+                try
+                {
+                    e.Graphics.TranslateTransform(-Left, -Top);
+                    InvokePaintBackground(Parent, new PaintEventArgs(e.Graphics, new Rectangle(Left, Top, Width, Height)));
+                }
+                finally { e.Graphics.Restore(backgroundState); }
+            }
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Rectangle r = new Rectangle(1, pressed ? 3 : 1, Width - 4, Height - 6);
-            Color face = Enabled ? BackColor : Color.FromArgb(237, 237, 232);
-            if (hovered && Enabled) face = ControlPaint.Light(face, .12F);
-            if (pressed && Enabled) face = ControlPaint.Dark(face, .04F);
+            bool down = pressed && Enabled;
+            Rectangle r = new Rectangle(UiMetrics.ButtonLeft, UiMetrics.ButtonTop + (down ? UiMetrics.ButtonPressOffset : 0), Width - UiMetrics.ButtonWidthTrim, Height - UiMetrics.ButtonHeightTrim);
+            Color face = Enabled ? BackColor : Blend(BackColor, UiColors.ButtonDisabledTint, UiMetrics.DisabledBlend);
+            if (hovered && Enabled) face = Blend(face, UiColors.ButtonHighlight, UiMetrics.HoverBlend);
+            Color top = Blend(face, UiColors.ButtonHighlight, down ? UiMetrics.PressedTopBlend : UiMetrics.TopBlend);
+            Color bottom = Blend(face, UiColors.ButtonShadeTint, down ? UiMetrics.PressedBottomBlend : UiMetrics.BottomBlend);
             using (GraphicsPath path = Round(r))
             {
-                if (!pressed && Enabled)
+                // Three restrained translucent layers approximate a soft contact
+                // shadow without a bitmap, and collapse when the button is pressed.
+                if (Enabled)
                 {
-                    using (GraphicsPath shadow = (GraphicsPath)path.Clone())
-                    using (Matrix move = new Matrix())
+                    for (int layer = down ? UiMetrics.PressedShadowLayers : UiMetrics.ShadowLayers; layer >= 1; layer--)
                     {
-                        move.Translate(0, 2); shadow.Transform(move);
-                        using (Brush brush = new SolidBrush(Color.FromArgb(28, 72, 69, 60))) e.Graphics.FillPath(brush, shadow);
+                        using (GraphicsPath shadow = (GraphicsPath)path.Clone())
+                        using (Matrix move = new Matrix())
+                        {
+                            move.Translate(0, layer * UiMetrics.ShadowStep); shadow.Transform(move);
+                            using (Brush brush = new SolidBrush(Color.FromArgb(down ? UiMetrics.PressedShadowAlpha : UiMetrics.ShadowOuterAlpha + (UiMetrics.ShadowLayers - layer) * UiMetrics.ShadowAlphaStep, UiColors.ButtonShadow)))
+                                e.Graphics.FillPath(brush, shadow);
+                        }
                     }
                 }
-                using (Brush brush = new SolidBrush(face)) e.Graphics.FillPath(brush, path);
-                using (Pen pen = new Pen(Color.FromArgb(216, 218, 207))) e.Graphics.DrawPath(pen, path);
+                using (LinearGradientBrush brush = new LinearGradientBrush(r, top, bottom, LinearGradientMode.Vertical))
+                    e.Graphics.FillPath(brush, path);
+                using (Pen edge = new Pen(Blend(UiColors.Border, UiColors.Ink, down ? UiMetrics.PressedEdgeBlend : UiMetrics.EdgeBlend), UiMetrics.ButtonStroke))
+                    e.Graphics.DrawPath(edge, path);
+                // A fine inner light edge gives the silver surface a small amount
+                // of material definition, not a thick bevel or glossy highlight.
+                Rectangle inner = r; inner.Inflate(-UiMetrics.ButtonRimInset, -UiMetrics.ButtonRimInset);
+                if (inner.Width > UiMetrics.ButtonRimMinSize && inner.Height > UiMetrics.ButtonRimMinSize)
+                {
+                    using (GraphicsPath rim = Round(inner))
+                    using (LinearGradientBrush light = new LinearGradientBrush(inner,
+                        Color.FromArgb(down ? UiMetrics.PressedRimTopAlpha : UiMetrics.RimTopAlpha, UiColors.ButtonHighlight), Color.FromArgb(UiMetrics.RimBottomAlpha, UiColors.ButtonHighlight), LinearGradientMode.Vertical))
+                    using (Pen pen = new Pen(light, UiMetrics.ButtonStroke)) e.Graphics.DrawPath(pen, rim);
+                }
             }
             Rectangle textRect = r;
             if (glyph != ButtonGlyph.None)
             {
-                float size = Math.Min(22F * e.Graphics.DpiX / 96F, Math.Min(r.Width - 8F, r.Height - 8F));
-                if (size >= 4)
+                float size = Math.Min(UiMetrics.GlyphSize * e.Graphics.DpiX / UiMetrics.BaseDpi, Math.Min(r.Width - UiMetrics.GlyphPadding, r.Height - UiMetrics.GlyphPadding));
+                if (size >= UiMetrics.GlyphMinSize)
                 {
-                    float x = iconOnly ? r.Left + (r.Width - size) / 2F : r.Left + 8F;
+                    float x = iconOnly ? r.Left + (r.Width - size) / 2F : r.Left + UiMetrics.GlyphPadding;
                     float y = r.Top + (r.Height - size) / 2F;
                     DrawGlyph(e.Graphics, new RectangleF(x, y, size, size), Enabled ? ForeColor : SystemColors.GrayText);
-                    if (!iconOnly) { int offset = (int)Math.Ceiling(size + 12); textRect.X += offset; textRect.Width -= offset; }
+                    if (!iconOnly) { int offset = (int)Math.Ceiling(size + UiMetrics.GlyphTextGap); textRect.X += offset; textRect.Width -= offset; }
                 }
             }
             if (!iconOnly || glyph == ButtonGlyph.None)
                 TextRenderer.DrawText(e.Graphics, Text, Font, textRect, Enabled ? ForeColor : SystemColors.GrayText,
                     (TextAlign == ContentAlignment.MiddleLeft ? TextFormatFlags.Left : TextFormatFlags.HorizontalCenter) |
                     TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
-            if (Focused && ShowFocusCues) { r.Inflate(-4, -4); ControlPaint.DrawFocusRectangle(e.Graphics, r, ForeColor, face); }
+            if (Focused && ShowFocusCues) { r.Inflate(-UiMetrics.ButtonFocusInset, -UiMetrics.ButtonFocusInset); ControlPaint.DrawFocusRectangle(e.Graphics, r, ForeColor, face); }
+        }
+        private Color OpaqueBackground()
+        {
+            for (Control ancestor = Parent; ancestor != null; ancestor = ancestor.Parent)
+                if (ancestor.BackColor.A == 255) return ancestor.BackColor;
+            return UiColors.Canvas;
+        }
+        private static Color Blend(Color source, Color target, float amount)
+        {
+            return Color.FromArgb(
+                (int)Math.Round(source.R + (target.R - source.R) * amount),
+                (int)Math.Round(source.G + (target.G - source.G) * amount),
+                (int)Math.Round(source.B + (target.B - source.B) * amount));
         }
         private void DrawGlyph(Graphics graphics, RectangleF r, Color color)
         {
             float x = r.X, y = r.Y, w = r.Width, h = r.Height;
-            using (Pen pen = new Pen(color, Math.Max(1.2F, w / 14F)))
+            using (Pen pen = new Pen(color, Math.Max(UiMetrics.GlyphMinStroke, w / UiMetrics.GlyphStrokeDivisor)))
             {
                 pen.StartCap = LineCap.Round; pen.EndCap = LineCap.Round; pen.LineJoin = LineJoin.Round;
                 if (glyph == ButtonGlyph.Clear)
                 {
-                    graphics.DrawLine(pen, x + w * .22F, y + h * .22F, x + w * .78F, y + h * .78F);
-                    graphics.DrawLine(pen, x + w * .78F, y + h * .22F, x + w * .22F, y + h * .78F);
+                    graphics.DrawLine(pen, x + w * UiMetrics.CrossNear, y + h * UiMetrics.CrossNear, x + w * UiMetrics.CrossFar, y + h * UiMetrics.CrossFar);
+                    graphics.DrawLine(pen, x + w * UiMetrics.CrossFar, y + h * UiMetrics.CrossNear, x + w * UiMetrics.CrossNear, y + h * UiMetrics.CrossFar);
                     return;
                 }
                 PointF[] outline = {
-                    new PointF(x + w * .08F, y + h * .82F), new PointF(x + w * .08F, y + h * .17F),
-                    new PointF(x + w * .36F, y + h * .17F), new PointF(x + w * .47F, y + h * .31F),
-                    new PointF(x + w * .91F, y + h * .31F), new PointF(x + w * .91F, y + h * .82F),
-                    new PointF(x + w * .08F, y + h * .82F)
+                    new PointF(x + w * UiMetrics.FolderLeft, y + h * UiMetrics.FolderBottom), new PointF(x + w * UiMetrics.FolderLeft, y + h * UiMetrics.FolderTop),
+                    new PointF(x + w * UiMetrics.FolderTabEnd, y + h * UiMetrics.FolderTop), new PointF(x + w * UiMetrics.FolderShoulder, y + h * UiMetrics.FolderBodyTop),
+                    new PointF(x + w * UiMetrics.FolderRight, y + h * UiMetrics.FolderBodyTop), new PointF(x + w * UiMetrics.FolderRight, y + h * UiMetrics.FolderBottom),
+                    new PointF(x + w * UiMetrics.FolderLeft, y + h * UiMetrics.FolderBottom)
                 };
                 graphics.DrawLines(pen, outline);
                 if (glyph == ButtonGlyph.FolderDownload)
                 {
-                    graphics.DrawLine(pen, x + w * .65F, y + h * .46F, x + w * .65F, y + h * .88F);
-                    graphics.DrawLine(pen, x + w * .50F, y + h * .73F, x + w * .65F, y + h * .88F);
-                    graphics.DrawLine(pen, x + w * .80F, y + h * .73F, x + w * .65F, y + h * .88F);
+                    graphics.DrawLine(pen, x + w * UiMetrics.ArrowX, y + h * UiMetrics.ArrowTop, x + w * UiMetrics.ArrowX, y + h * UiMetrics.ArrowBottom);
+                    graphics.DrawLine(pen, x + w * UiMetrics.ArrowLeft, y + h * UiMetrics.ArrowShoulder, x + w * UiMetrics.ArrowX, y + h * UiMetrics.ArrowBottom);
+                    graphics.DrawLine(pen, x + w * UiMetrics.ArrowRight, y + h * UiMetrics.ArrowShoulder, x + w * UiMetrics.ArrowX, y + h * UiMetrics.ArrowBottom);
                 }
             }
         }
 
         private static GraphicsPath Round(Rectangle r)
         {
-            int d = Math.Min(12, Math.Min(r.Width, r.Height));
+            int d = Math.Min(UiMetrics.ButtonCornerDiameter, Math.Min(r.Width, r.Height));
             GraphicsPath p = new GraphicsPath();
-            p.AddArc(r.Left, r.Top, d, d, 180, 90); p.AddArc(r.Right - d, r.Top, d, d, 270, 90);
-            p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90); p.AddArc(r.Left, r.Bottom - d, d, d, 90, 90);
+            p.AddArc(r.Left, r.Top, d, d, UiMetrics.ArcLeft, UiMetrics.ArcSweep); p.AddArc(r.Right - d, r.Top, d, d, UiMetrics.ArcTop, UiMetrics.ArcSweep);
+            p.AddArc(r.Right - d, r.Bottom - d, d, d, UiMetrics.ArcRight, UiMetrics.ArcSweep); p.AddArc(r.Left, r.Bottom - d, d, d, UiMetrics.ArcBottom, UiMetrics.ArcSweep);
             p.CloseFigure(); return p;
         }
     }
@@ -208,3 +275,4 @@ namespace SeccFirmwarePackager
         }
     }
 }
+

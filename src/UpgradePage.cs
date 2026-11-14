@@ -72,7 +72,7 @@ namespace SeccFirmwarePackager
                 using (OpenFileDialog dialog = new OpenFileDialog { Title = "选择升级 BIN", Filter = "BIN 文件 (*.bin)|*.bin", CheckFileExists = true })
                     if (dialog.ShowDialog(FindForm()) == DialogResult.OK) SelectPackage(dialog.FileName);
             };
-            TableLayoutPanel pathLine = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty, BackColor = UiColors.Card };
+            TableLayoutPanel pathLine = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty, BackColor = Color.Transparent };
             pathLine.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); pathLine.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
             pathLine.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             pathLine.Controls.Add(pathField, 0, 0); pathLine.Controls.Add(browse, 1, 0);
@@ -89,23 +89,23 @@ namespace SeccFirmwarePackager
             settingsBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
             settingsBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
             FlowLayoutPanel modes = new FlowLayoutPanel { Name = "UpgradeModes", Dock = DockStyle.Fill, Margin = Padding.Empty,
-                Padding = Padding.Empty, WrapContents = false, BackColor = UiColors.Card };
+                Padding = Padding.Empty, WrapContents = false, BackColor = Color.Transparent };
             PrepareMode(localMode, "LocalUpgradeMode", "本地升级");
             PrepareMode(remoteMode, "RemoteUpgradeMode", "远程升级");
             localMode.Click += delegate { SetMode(false); };
             remoteMode.Click += delegate { SetMode(true); };
             modes.Controls.Add(localMode); modes.Controls.Add(remoteMode); settingsBody.Controls.Add(modes, 0, 0);
-            localSettings.Name = "LocalUpgradeSettings"; localSettings.Dock = DockStyle.Fill; localSettings.BackColor = UiColors.Card;
-            remoteSettings.Name = "RemoteUpgradeSettings"; remoteSettings.Dock = DockStyle.Fill; remoteSettings.BackColor = UiColors.Card;
+            localSettings.Name = "LocalUpgradeSettings"; localSettings.Dock = DockStyle.Fill; localSettings.BackColor = Color.Transparent;
+            remoteSettings.Name = "RemoteUpgradeSettings"; remoteSettings.Dock = DockStyle.Fill; remoteSettings.BackColor = Color.Transparent;
             localSettings.Controls.Add(BuildLocalSettings());
             remoteSettings.Controls.Add(BuildRemoteSettings());
-            Panel modeHost = new Panel { Dock = DockStyle.Fill, BackColor = UiColors.Card, Margin = Padding.Empty };
+            Panel modeHost = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Margin = Padding.Empty };
             modeHost.Controls.Add(remoteSettings); modeHost.Controls.Add(localSettings);
             settingsBody.Controls.Add(modeHost, 0, 1);
             settingsCard.Controls.Add(settingsBody); Controls.Add(settingsCard, 0, 1);
 
             SectionCard resultCard = Card("UpgradeResultCard");
-            TableLayoutPanel result = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty, BackColor = UiColors.Card };
+            TableLayoutPanel result = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty, BackColor = Color.Transparent };
             result.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); result.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 186));
             result.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             status.Name = "UpgradeStatus"; status.Dock = DockStyle.Fill; status.TextAlign = ContentAlignment.MiddleLeft;
@@ -126,7 +126,7 @@ namespace SeccFirmwarePackager
 
         private static TableLayoutPanel CreateLayout(int rows)
         {
-            return new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = rows, Margin = Padding.Empty, BackColor = UiColors.Card };
+            return new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = rows, Margin = Padding.Empty, BackColor = Color.Transparent };
         }
 
         private static Label Title(string text)
@@ -144,7 +144,7 @@ namespace SeccFirmwarePackager
         {
             button.FlatStyle = FlatStyle.Flat; button.FlatAppearance.BorderSize = 0; button.UseVisualStyleBackColor = false;
             button.Font = new Font("Microsoft YaHei UI", 9F, selected ? FontStyle.Bold : FontStyle.Regular);
-            button.BackColor = selected ? Color.FromArgb(219, 230, 214) : Color.FromArgb(238, 234, 242);
+            button.BackColor = selected ? UiColors.ButtonPrimary : UiColors.ButtonSecondary;
             button.ForeColor = UiColors.Ink; button.Cursor = Cursors.Hand;
         }
 
@@ -163,7 +163,7 @@ namespace SeccFirmwarePackager
 
         private static TableLayoutPanel BuildLocalSettings()
         {
-            TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = Padding.Empty, BackColor = UiColors.Card };
+            TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = Padding.Empty, BackColor = Color.Transparent };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72)); layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 62)); layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
@@ -176,7 +176,7 @@ namespace SeccFirmwarePackager
 
         private static TableLayoutPanel BuildRemoteSettings()
         {
-            TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 3, Margin = Padding.Empty, BackColor = UiColors.Card };
+            TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 3, Margin = Padding.Empty, BackColor = Color.Transparent };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72)); layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 62)); layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             for (int i = 0; i < 3; i++) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
@@ -196,8 +196,8 @@ namespace SeccFirmwarePackager
         private void SetMode(bool remote)
         {
             localSettings.Visible = !remote; remoteSettings.Visible = remote;
-            localMode.BackColor = remote ? Color.FromArgb(238, 234, 242) : Color.FromArgb(219, 230, 214);
-            remoteMode.BackColor = remote ? Color.FromArgb(219, 230, 214) : Color.FromArgb(238, 234, 242);
+            localMode.BackColor = remote ? UiColors.ButtonSecondary : UiColors.ButtonPrimary;
+            remoteMode.BackColor = remote ? UiColors.ButtonPrimary : UiColors.ButtonSecondary;
             settingsBody.RowStyles[1].Height = remote ? 96 : 32;
             RowStyles[1].Height = remote ? 160 : 96;
             status.Text = remote ? "运营平台升级接口尚未接入。" : "本地网口升级协议尚未接入。";
@@ -230,7 +230,7 @@ namespace SeccFirmwarePackager
 
         private void SetError(string text)
         {
-            packageInfo.ForeColor = Color.FromArgb(181, 50, 57);
+            packageInfo.ForeColor = UiColors.Error;
             SetInfo(text, 1);
         }
 
@@ -282,3 +282,4 @@ namespace SeccFirmwarePackager
         }
     }
 }
+
