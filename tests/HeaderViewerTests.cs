@@ -2,11 +2,74 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows.Forms;
 using SeccFirmwarePackager;
 
 internal static class HeaderViewerTests
 {
+    [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct CharRange { public int Min, Max; }
+    [StructLayout(LayoutKind.Sequential)] private struct FormatRange
+    { public IntPtr Hdc, TargetHdc; public NativeRect Area, Page; public CharRange Range; }
+    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern IntPtr FormatMessage(IntPtr window, uint message, IntPtr render, ref FormatRange range);
+    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern IntPtr ClearFormat(IntPtr window, uint message, IntPtr w, IntPtr l);
+    private static void SaveEvidence(Form form, RichTextBox hex, string work)
+    {
+        File.WriteAllText(Path.Combine(work, "header-text.txt"), hex.Text, Encoding.UTF8);
+        File.WriteAllText(Path.Combine(work, "header-selection.txt"),
+            "SelectionStart=" + hex.SelectionStart + "\r\nSelectionLength=" + hex.SelectionLength +
+            "\r\nSelectedText=" + hex.SelectedText + "\r\nSelectionBackColor=" + hex.SelectionBackColor +
+            "\r\nFont=" + hex.Font + "\r\nReadOnly=" + hex.ReadOnly, Encoding.UTF8);
+        if (Environment.OSVersion.Platform != PlatformID.Win32NT)
+        {
+            using (Bitmap picture = new Bitmap(form.Width, form.Height))
+            { form.DrawToBitmap(picture, new Rectangle(Point.Empty, form.Size)); picture.Save(Path.Combine(work, "header-viewer-mono.png")); }
+            Console.WriteLine("Header evidence: Mono DrawToBitmap, not Windows desktop capture."); return;
+        }
+        // CopyFromScreen is genuine desktop evidence, but a hosted runner may have no active desktop.
+        try
+        {
+            form.Activate(); form.Refresh(); Application.DoEvents();
+            using (Bitmap desktop = new Bitmap(form.Width, form.Height))
+            using (Graphics graphics = Graphics.FromImage(desktop))
+            { graphics.CopyFromScreen(form.Location, Point.Empty, form.Size); desktop.Save(Path.Combine(work, "header-viewer-desktop-candidate.png")); }
+            Console.WriteLine("Desktop capture saved as candidate; inspect for active desktop/occlusion before treating it as visual proof.");
+        }
+        catch (Exception ex) { Console.WriteLine("Desktop capture unavailable: " + ex.GetType().Name + ": " + ex.Message); }
+        using (Bitmap picture = new Bitmap(form.Width, form.Height))
+        using (Bitmap native = new Bitmap(hex.ClientSize.Width, hex.ClientSize.Height))
+        {
+            form.DrawToBitmap(picture, new Rectangle(Point.Empty, form.Size));
+            using (Graphics graphics = Graphics.FromImage(native))
+            {
+                graphics.Clear(hex.BackColor);
+                int width = (int)Math.Round(native.Width * 1440.0 / graphics.DpiX);
+                int height = (int)Math.Round(native.Height * 1440.0 / graphics.DpiY);
+                IntPtr hdc = graphics.GetHdc();
+                try
+                {
+                    FormatRange range = new FormatRange { Hdc = hdc, TargetHdc = hdc,
+                        Area = new NativeRect { Right = width, Bottom = height },
+                        Page = new NativeRect { Right = width, Bottom = height },
+                        Range = new CharRange { Min = 0, Max = hex.TextLength } };
+                    int end = FormatMessage(hex.Handle, 0x0439, new IntPtr(1), ref range).ToInt32();
+                    Assert(end > 0, "native RichEdit rendered characters");
+                }
+                finally { ClearFormat(hex.Handle, 0x0439, IntPtr.Zero, IntPtr.Zero); graphics.ReleaseHdc(hdc); }
+            }
+            Point screenOrigin = hex.PointToScreen(Point.Empty);
+            Point origin = new Point(screenOrigin.X - form.Left, screenOrigin.Y - form.Top);
+            using (Graphics graphics = Graphics.FromImage(picture)) graphics.DrawImageUnscaled(native, origin);
+            picture.Save(Path.Combine(work, "header-viewer-native-richtext.png"));
+        }
+        File.WriteAllText(Path.Combine(work, "render-method.txt"),
+            "header-viewer-native-richtext.png uses the live RichEdit control EM_FORMATRANGE rendering over the form DrawToBitmap. It is NOT a desktop screenshot. Native print rendering may omit selection highlight; highlight is checked by actual selection assertions and recorded in header-selection.txt. Desktop candidate requires visual inspection.");
+        Console.WriteLine("Saved native RichEdit EM_FORMATRANGE evidence (not a desktop screenshot).");
+    }
     private static int count;
     private static void Assert(bool ok, string message) { count++; if (!ok) throw new Exception(message); }
     private static void Fails(Action action, Type expected)
@@ -62,8 +125,8 @@ internal static class HeaderViewerTests
                 int prior = hex.SelectionStart; address.Text = "0x1000"; jump.Invoke(form, null);
                 Assert(hex.SelectionStart == prior, "invalid offset does not move existing highlight outside header");
                 Assert(hex.Text == HeaderViewer.FormatHex(header), "navigation leaves header content unchanged");
-                using (Bitmap picture = new Bitmap(form.Width, form.Height))
-                { form.DrawToBitmap(picture, new Rectangle(Point.Empty, form.Size)); picture.Save(Path.Combine(work, "header-viewer.png")); }
+                address.Text = "0x0008"; jump.Invoke(form, null); Application.DoEvents();
+                SaveEvidence(form, hex, work);
                 form.Close();
             }
             Console.WriteLine("PASS header viewer assertions=" + count + "; bounded-read implementation reviewed separately"); return 0;

@@ -85,6 +85,53 @@ internal static class UiContractTests
         Assert(((DataGridView)Find(form, "PreviewGrid")).Rows.Count == 0, "clear all removes preview rows");
         Assert(File.Exists(pfc) && File.Exists(manual) && File.Exists(noVersion), "clear all does not delete files");
     }
+    private static void TestHelpDialog(Form owner, string work)
+    {
+        Rectangle oldBounds = owner.Bounds;
+        string oldOutput = Find(owner, "OutputPath").Text;
+        string oldResult = Find(owner, "ResultDetails").Text;
+        Exception failure = null; bool inspected = false;
+        DateTime deadline = DateTime.UtcNow.AddSeconds(5);
+        using (Timer timer = new Timer())
+        {
+            timer.Interval = 150;
+            timer.Tick += delegate
+            {
+                Form help = null;
+                foreach (Form open in Application.OpenForms) if (open.Text == "操作说明") { help = open; break; }
+                if (help == null)
+                {
+                    if (DateTime.UtcNow < deadline) return;
+                    timer.Stop(); failure = new Exception("Help dialog not found within five seconds");
+                    Form unexpectedModal = null;
+                    foreach (Form open in Application.OpenForms) if (open != owner && open.Modal) { unexpectedModal = open; break; }
+                    if (unexpectedModal != null) unexpectedModal.Close();
+                    return;
+                }
+                timer.Stop();
+                try
+                {
+                    TextBox text = (TextBox)Find(help, "HelpText");
+                    Assert(help.Modal && text != null && text.ReadOnly, "help is modal and read-only");
+                    foreach (string term in new[] { "96/64", "256,000", "524,288", "2,097,152", "2,621,440", "6,291,456", "4096", "0x0FFF", "FTP", "明文", "一键清理" })
+                        Assert(text.Text.Contains(term), "help contains " + term);
+                    File.WriteAllText(Path.Combine(work, "help-text.txt"), text.Text);
+                    using (Bitmap image = new Bitmap(help.Width, help.Height))
+                    { help.DrawToBitmap(image, new Rectangle(Point.Empty, help.Size)); image.Save(Path.Combine(work, "help-dialog.png")); }
+                    inspected = true;
+                }
+                catch (Exception ex) { failure = ex; }
+                finally { help.Close(); }
+            };
+            timer.Start();
+            owner.GetType().GetMethod("ShowHelp", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(owner, null);
+            timer.Stop();
+        }
+        if (failure != null) throw failure;
+        Assert(inspected, "help dialog inspected before close");
+        Assert(owner.Bounds == oldBounds && Find(owner, "OutputPath").Text == oldOutput && Find(owner, "ResultDetails").Text == oldResult,
+            "closing help preserves window bounds and state");
+    }
     [STAThread]
     private static int Main(string[] args)
     {
@@ -254,6 +301,7 @@ internal static class UiContractTests
                     { form.DrawToBitmap(image, new Rectangle(Point.Empty, form.Size)); image.Save(Path.Combine(work, "five-files-125-text.png")); }
                     grid.Font = original;
                 }
+                TestHelpDialog(form, work);
                 TestFilenameWorkflow(form, work);
                 form.Close();
             }
