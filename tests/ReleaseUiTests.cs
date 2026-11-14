@@ -297,6 +297,8 @@ internal static class ReleaseUiTests
             Thread.Sleep(1000);
             IntPtr root = process.MainWindowHandle;
             uint id = (uint)process.Id;
+            Node inlineUpload = Button(root, "上传到 FTP", 0);
+            if (!IsWindowVisible(inlineUpload.Handle)) throw new Exception("FTP upload must be visible inline on startup.");
             Node browseM4 = Button(root, "浏览", 2);
             Node dropTarget = EditInRow(root, browseM4, 0);
             RealDrag(dropTarget.Handle, input);

@@ -24,27 +24,8 @@ internal static class GuiSmokeTests
     private static T Find<T>(Control root, string name) where T : Control
     {
         Control[] found = root.Controls.Find(name, true);
-        if (found.Length == 0 && root is MainForm)
-        {
-            Form ftp = (Form)typeof(MainForm).GetField("ftpDialog", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(root);
-            found = ftp.Controls.Find(name, true);
-        }
         if (found.Length != 1 || !(found[0] is T)) throw new Exception("Missing UI control: " + name);
         return (T)found[0];
-    }
-
-    private static void WithFtpDialog(MainForm form, Action<Form> action)
-    {
-        Form dialog = (Form)typeof(MainForm).GetField("ftpDialog", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
-        Exception failure = null;
-        form.BeginInvoke(new MethodInvoker(delegate
-        {
-            try { if (!dialog.Visible || !dialog.Modal) throw new Exception("FTP must be modal"); action(dialog); }
-            catch (Exception ex) { failure = ex; }
-            finally { dialog.Close(); }
-        }));
-        Find<Button>(form, "FtpToggle").PerformClick();
-        if (failure != null) throw failure;
     }
 
     private static DragEventArgs SendDrag(Control target, string eventName, string[] paths)
@@ -81,7 +62,7 @@ internal static class GuiSmokeTests
         }
     }
 
-    private static void WaitForStatus(Label status, string expected)
+    private static void WaitForStatus(Control status, string expected)
     {
         DateTime deadline = DateTime.UtcNow.AddSeconds(20);
         while (!status.Text.Contains(expected) && DateTime.UtcNow < deadline)
@@ -97,7 +78,7 @@ internal static class GuiSmokeTests
         FtpAddressBox address = Find<FtpAddressBox>(form, "FtpAddress");
         TextBox user = Find<TextBox>(form, "FtpUser");
         TextBox password = Find<TextBox>(form, "FtpPassword");
-        Label status = Find<Label>(form, "FtpStatus");
+        TextBox status = Find<TextBox>(form, "ResultDetails");
         if (!password.UseSystemPasswordChar) throw new Exception("FTP password is not masked");
         MethodInfo start = typeof(MainForm).GetMethod("StartFtpUpload", BindingFlags.Instance | BindingFlags.NonPublic);
         if (start == null) throw new Exception("Missing FTP upload action");
@@ -166,24 +147,25 @@ internal static class GuiSmokeTests
                         string input = Path.Combine(workDir, "M4 固件 文件.bin");
                         string output = Path.Combine(workDir, "联合 固件 包.bin");
                         if (!form.Text.Contains("V0.0.1")) throw new Exception("Tool version must be independent from package format V1");
+                        if (form.Controls.Find("FtpToggle", true).Length != 0 || form.Controls.Find("FtpDialog", true).Length != 0)
+                            throw new Exception("FTP must be inline without toggle or dialog");
                         if (form.Controls.Find("BrandHeader", true).Length != 0) throw new Exception("Redundant brand banner must not be present");
                         if (form.Controls.Find("SoundEnabled", true).Length != 0) throw new Exception("Sound selector must not be present");
                         FieldInfo soundsField = typeof(MainForm).GetField("sounds", BindingFlags.Instance | BindingFlags.NonPublic);
                         UiSounds feedback = (UiSounds)soundsField.GetValue(form);
                         if (!feedback.Enabled) throw new Exception("Audio feedback must be enabled by default");
                         feedback.Enabled = false; // Test isolation only.
-                        if (Find<DataGridView>(form, "PreviewGrid").Visible || Find<Control>(form, "FtpAddress").Visible)
-                            throw new Exception("Technical detail and FTP must start collapsed");
+                        if (Find<DataGridView>(form, "PreviewGrid").Visible || !Find<Control>(form, "FtpAddress").Visible)
+                            throw new Exception("Preview must start collapsed and inline FTP visible");
                         Find<Button>(form, "PreviewToggle").PerformClick();
-                        WithFtpDialog(form, delegate(Form dialog)
                         {
-                            if (Find<TextBox>(form, "FtpFilePath").Text != "" || !Find<Label>(form, "FtpSourceKind").Text.Contains("拖入"))
+                            if (Find<TextBox>(form, "FtpFilePath").Text != "" || Find<Label>(form, "FtpSourceKind").Text != "选择文件")
                                 throw new Exception("FTP before generation must offer file selection");
                             CheckButton(Find<Button>(form, "FtpUploadButton"));
-                        });
+                        }
                         Application.DoEvents();
-                        if (!Find<DataGridView>(form, "PreviewGrid").Visible || Find<Control>(form, "FtpAddress").Visible)
-                            throw new Exception("Preview opens inline; FTP closes as a modal");
+                        if (!Find<DataGridView>(form, "PreviewGrid").Visible || !Find<Control>(form, "FtpAddress").Visible)
+                            throw new Exception("Preview opens and inline FTP remains visible");
                         CheckButtonText(form);
                         foreach (string name in new[] { "BrowseOutput", "BuildButton", "OpenVerifyButton" })
                         {
@@ -263,7 +245,7 @@ internal static class GuiSmokeTests
                         Find<Button>(form, "BuildButton").PerformClick();
                         if (Packager.VerifyFile(allOutput).Entries.Count != 5)
                             throw new Exception("GUI failed to build a five-file package");
-                        WithFtpDialog(form, delegate(Form dialog) { TestFtpUi(form, allOutput); });
+                        TestFtpUi(form, allOutput);
                         form.Refresh();
                         Application.DoEvents();
                         using (Bitmap picture = new Bitmap(form.Width, form.Height))
@@ -272,11 +254,10 @@ internal static class GuiSmokeTests
                             picture.Save(Path.Combine(workDir, "gui-five.png"), System.Drawing.Imaging.ImageFormat.Png);
                         }
                         string retainedFtpAddress = Find<TextBox>(form, "FtpAddress").Text;
-                        WithFtpDialog(form, delegate(Form dialog)
                         {
                             if (Find<TextBox>(form, "FtpAddress").Text != retainedFtpAddress)
-                                throw new Exception("Reopening FTP must retain its state");
-                        });
+                                throw new Exception("Inline FTP must retain its state");
+                        }
                         Find<Button>(form, "PreviewToggle").PerformClick();
                         Find<Button>(form, "PreviewToggle").PerformClick();
                         Application.DoEvents();

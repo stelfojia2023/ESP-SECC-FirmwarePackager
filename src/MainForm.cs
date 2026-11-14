@@ -150,8 +150,6 @@ namespace SeccFirmwarePackager
         private readonly ToolTip tooltips = new ToolTip();
         private readonly UiSounds sounds = new UiSounds();
         private readonly Label overview = new Label();
-        private Button ftpToggle;
-        private Form ftpDialog;
         private Button ftpBrowseFile;
         private LinkLabel ftpUsePackage;
         private readonly TextBox ftpFile = new TextBox();
@@ -184,9 +182,9 @@ namespace SeccFirmwarePackager
             body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
             body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
             body.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
-            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 560));
+            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 520));
             body.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
-            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
+            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
             body.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
             scroll.Controls.Add(body);
 
@@ -233,7 +231,7 @@ namespace SeccFirmwarePackager
             TableLayoutPanel result = CardLayout(8);
             result.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
             result.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-            result.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
+            result.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
             result.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
             result.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
             result.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
@@ -267,10 +265,17 @@ namespace SeccFirmwarePackager
             Button open = new RaisedButton { Name = "OpenVerifyButton", Text = "打开并校验", Dock = DockStyle.Fill };
             StyleButton(open, false, false); open.Click += OpenClicked; actions.Controls.Add(open, 1, 0);
             result.Controls.Add(actions, 0, 5);
-            result.Controls.Add(FieldLabel("操作结果"), 0, 6);
+            result.Controls.Add(TitleLabel("FTP 上传"), 0, 6);
             details.Name = "ResultDetails"; details.Multiline = true; details.ReadOnly = true;
             details.ScrollBars = ScrollBars.Both; details.WordWrap = false; details.Text = "尚无操作记录";
-            result.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill }, 0, 7);
+            SectionCard operationCard = new SectionCard { Name = "OperationResultCard", Dock = DockStyle.Fill };
+            TableLayoutPanel operation = CardLayout(2);
+            operation.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            operation.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            operation.Controls.Add(TitleLabel("操作结果"), 0, 0);
+            operation.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill }, 0, 1);
+            operationCard.Controls.Add(operation);
+            body.Controls.Add(operationCard, 0, 3); body.SetColumnSpan(operationCard, 2);
 
             grid.Name = "PreviewGrid"; grid.Dock = DockStyle.Fill;
             grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.AllowUserToResizeRows = false;
@@ -339,7 +344,7 @@ namespace SeccFirmwarePackager
             chooseFile.Click += delegate
             {
                 using (OpenFileDialog dialog = new OpenFileDialog { Title = "选择 FTP 上传文件", Filter = "所有文件 (*.*)|*.*", CheckFileExists = true })
-                    if (dialog.ShowDialog(ftpDialog) == DialogResult.OK) SetFtpFile(dialog.FileName, false);
+                    if (dialog.ShowDialog(this) == DialogResult.OK) SetFtpFile(dialog.FileName, false);
             };
             fileRow.Controls.Add(chooseFile, 2, 0); ftp.Controls.Add(fileRow, 0, 0);
             TableLayoutPanel sourceRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
@@ -355,26 +360,34 @@ namespace SeccFirmwarePackager
                 else { ftpStatus.Text = "还没有生成联合包；可直接选择本地文件上传。"; ftpStatus.ForeColor = UiColors.Muted; }
             };
             sourceRow.Controls.Add(usePackage, 1, 0); ftp.Controls.Add(sourceRow, 0, 1);
-            ftpDialog = new Form { Name = "FtpDialog", Text = "FTP 上传", Size = new Size(820, 400),
-                MinimumSize = new Size(720, 370), StartPosition = FormStartPosition.CenterParent,
-                Font = Font, AutoScaleMode = AutoScaleMode.Dpi, BackColor = UiColors.Canvas,
-                ShowInTaskbar = false, MinimizeBox = false, MaximizeBox = false };
-            SectionCard dialogCard = new SectionCard { Dock = DockStyle.Fill, Margin = Padding.Empty };
-            ftpDialog.Padding = new Padding(16); ftpDialog.Controls.Add(dialogCard); dialogCard.Controls.Add(ftp);
-            ftpDialog.FormClosing += delegate(object sender, FormClosingEventArgs e)
+            TableLayoutPanel inlineFtp = new TableLayoutPanel { Name = "FtpInlinePanel", Dock = DockStyle.Fill,
+                ColumnCount = 1, RowCount = 6, Margin = Padding.Empty };
+            for (int n = 0; n < 5; n++) inlineFtp.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            inlineFtp.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+            // Reuse the existing fields and handlers; only their presentation changes.
+            fileRow.ColumnStyles[0].Width = 60; fileRow.ColumnStyles[2].Width = 76;
+            chooseFile.Text = "选择文件"; inlineFtp.Controls.Add(fileRow, 0, 0);
+            addressRow.Controls.Remove(ftpUpload);
+            addressRow.ColumnCount = 2; addressRow.ColumnStyles.RemoveAt(2); addressRow.ColumnStyles[0].Width = 60;
+            inlineFtp.Controls.Add(addressRow, 0, 1);
+            foreach (TextBox field in new[] { ftpUser, ftpPassword })
             {
-                if (ftpBusy)
-                {
-                    e.Cancel = true;
-                    MessageBox.Show(ftpDialog, "上传仍在进行，请等待结果后关闭。", "上传进行中", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-            };
-            ftpToggle = new RaisedButton { Name = "FtpToggle", Text = "FTP 上传", Width = 160, Height = 40,
-                Anchor = AnchorStyles.Left | AnchorStyles.Top, Margin = new Padding(2, 6, 0, 4) };
-            StyleButton(ftpToggle, false, false);
-            ftpToggle.Click += delegate { ftpDialog.ShowDialog(this); };
-            body.Controls.Add(ftpToggle, 0, 3); body.SetColumnSpan(ftpToggle, 2);
-            ftpStatus.TextChanged += delegate { UpdateFtpCaption(); };
+                TableLayoutPanel line = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+                line.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 60));
+                line.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+                line.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+                line.Controls.Add(FieldLabel(field == ftpUser ? "用户名" : "密码"), 0, 0);
+                line.Controls.Add(field.Parent, 1, 0);
+                inlineFtp.Controls.Add(line, 0, field == ftpUser ? 2 : 3);
+            }
+            FlowLayoutPanel ftpActions = new FlowLayoutPanel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+            ftpUpload.Dock = DockStyle.None; ftpUpload.Size = new Size(128, 30);
+            usePackage.Dock = DockStyle.None; usePackage.Size = new Size(140, 30); usePackage.Text = "使用最近联合包";
+            ftpActions.Controls.Add(ftpUpload); ftpActions.Controls.Add(usePackage);
+            inlineFtp.Controls.Add(ftpActions, 0, 4);
+            ftpSourceKind.Text = "选择文件"; inlineFtp.Controls.Add(ftpSourceKind, 0, 5);
+            result.Controls.Add(inlineFtp, 0, 7);
+            ftpStatus.TextChanged += delegate { details.ForeColor = ftpStatus.ForeColor; details.Text = ftpStatus.Text; };
             FormClosing += FtpFormClosing;
 
             LinkLabel limits = new LinkLabel { Text = "设备使用注意", Dock = DockStyle.Fill,
@@ -414,15 +427,7 @@ namespace SeccFirmwarePackager
         {
             ftpFile.Text = Path.GetFullPath(path);
             ftpPackageSource = package;
-            ftpSourceKind.Text = package ? "联合包 · 上传前校验" : "本地文件 · 直接上传，不进行联合包校验";
-        }
-
-        private void UpdateFtpCaption()
-        {
-            if (ftpToggle == null) return;
-            string state = ftpBusy ? " · 上传中" : ftpStatus.Text.StartsWith("上传成功") ? " · 成功" :
-                ftpStatus.Text.StartsWith("上传失败") ? " · 失败" : "";
-            ftpToggle.Text = "FTP 上传" + state;
+            ftpSourceKind.Text = package ? "联合包" : "本地文件";
         }
 
         private static Label FieldLabel(string text)
@@ -705,7 +710,7 @@ namespace SeccFirmwarePackager
                 if (raw != null && raw.IndexOf('@') >= 0) ftpAddress.Clear();
                 ftpStatus.ForeColor = Color.FromArgb(181, 50, 57);
                 ftpStatus.Text = ex.Message;
-                if (showErrors) MessageBox.Show(ftpDialog, ex.Message, "FTP 地址无效", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                if (showErrors) MessageBox.Show(this, ex.Message, "FTP 地址无效", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return false;
             }
         }
@@ -720,7 +725,7 @@ namespace SeccFirmwarePackager
                 if (String.IsNullOrWhiteSpace(ftpUser.Text)) throw new InvalidDataException("请输入 FTP 用户名。");
                 FtpLocation location = FtpUploader.ParseAddress(ftpAddress.Text);
                 Uri destination = FtpUploader.FileUri(location, Path.GetFileName(ftpFile.Text));
-                DialogResult answer = MessageBox.Show(ftpDialog,
+                DialogResult answer = MessageBox.Show(this,
                     "本地文件：\n" + ftpFile.Text + "\n\n" + (ftpPackageSource ? "联合包：上传前校验。" : "普通文件：直接上传，不进行联合包校验。") + "\n\n即将上传至：\n" + destination.AbsoluteUri +
                     "\n\n普通 FTP 明文传输账号、密码和文件；服务器同名文件可能被覆盖。确定上传？",
                     "确认 FTP 上传", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
@@ -732,7 +737,7 @@ namespace SeccFirmwarePackager
                 ftpStatus.ForeColor = Color.FromArgb(181, 50, 57);
                 sounds.Play("failure");
                 ftpStatus.Text = "上传失败：" + ex.Message;
-                MessageBox.Show(ftpDialog, ex.Message, "上传失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, ex.Message, "上传失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -802,7 +807,7 @@ namespace SeccFirmwarePackager
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { if (ftpDialog != null) ftpDialog.Dispose(); tooltips.Dispose(); sounds.Dispose(); }
+            if (disposing) { tooltips.Dispose(); sounds.Dispose(); }
             base.Dispose(disposing);
         }
 
@@ -827,6 +832,7 @@ namespace SeccFirmwarePackager
             catch (Exception ex)
             {
                 sounds.Play("failure");
+                details.ForeColor = Color.FromArgb(181, 50, 57);
                 details.Text = "打包失败：" + ex.Message;
                 MessageBox.Show(this, details.Text, "打包失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -844,6 +850,7 @@ namespace SeccFirmwarePackager
                 catch (Exception ex)
                 {
                     sounds.Play("failure");
+                    details.ForeColor = Color.FromArgb(181, 50, 57);
                     details.Text = "校验失败：" + ex.Message;
                     MessageBox.Show(this, details.Text, "校验失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
@@ -869,6 +876,7 @@ namespace SeccFirmwarePackager
             }
             foreach (string warning in report.Warnings) text.AppendLine("\r\n警告：" + warning);
             sounds.Play("success");
+            details.ForeColor = UiColors.Ink;
             details.Text = text.ToString();
             details.SelectionStart = 0;
             details.ScrollToCaret();
