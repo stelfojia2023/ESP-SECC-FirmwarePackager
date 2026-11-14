@@ -144,7 +144,7 @@ internal static class UiContractTests
         Control upgrade = Find(form, "UpgradePageTab");
         Assert(help != null && folder != null && card != null && nav != null && nav.Contains(help) && !card.Contains(help), "help is in page navigation");
         Assert(Find(form, "HelpStrip") == null, "help does not occupy a separate row");
-        Assert(help.Text == "! 操作说明" && help.Size == new Size(130, 40), "help uses the requested exclamation and label");
+        Assert(help.Text == "! 操作说明" && help.Size == new Size(180, 40), "help uses the requested exclamation and label");
         Assert(pack.Size == new Size(180, 40) && upgrade.Size == pack.Size && Math.Abs(pack.Font.Size - 10.5F) < 0.01F &&
             Math.Abs(upgrade.Font.Size - 10.5F) < 0.01F, "main navigation uses uniform large buttons and text");
         Assert(pack.Font.Bold && !upgrade.Font.Bold, "selected page has stronger text");
