@@ -332,7 +332,7 @@ internal static class ReleaseUiTests
             foreach (Node child in Children(root))
                 if (IsClass(child, "BUTTON") && child.Text == "包校验")
                     throw new Exception("Standalone package verification button must be removed.");
-            Click(Button(root, "ⓘ", 0).Handle);
+            Click(Button(root, "! 操作说明", 0).Handle);
             DismissError(id, "操作说明", "文件与版本");
             Node browseM4 = Button(root, "选择 M4 固件", 0);
             Node dropTarget = EditInRow(root, browseM4, 0);
@@ -367,6 +367,8 @@ internal static class ReleaseUiTests
             WaitUntil(delegate { return UntitledHeaderDialog(id) == IntPtr.Zero; }, "Header dialog did not close.");
             Click(Button(root, "设备升级", 0).Handle);
             WaitUntil(delegate { return ContainsText(root, "本地网口升级协议尚未接入"); }, "Upgrade page did not appear.");
+            Click(Button(root, "! 操作说明", 0).Handle);
+            DismissError(id, "操作说明", "设备升级");
             Node upgradeBrowse = Button(root, "选择升级 BIN", 0);
             Node upgradePath = EditInRow(root, upgradeBrowse, 0);
             if (Describe(upgradePath.Handle).Text != output || !ContainsText(root, "V000B01D15"))

@@ -205,6 +205,8 @@ namespace SeccFirmwarePackager
         private readonly Button packageTab = new RaisedButton();
         private readonly Button upgradeTab = new RaisedButton();
         private readonly UpgradePage upgradePage = new UpgradePage();
+        private readonly Font pageTabFont = new Font("Microsoft YaHei UI", 10.5F, FontStyle.Regular);
+        private readonly Font pageTabSelectedFont = new Font("Microsoft YaHei UI", 10.5F, FontStyle.Bold);
         private Button ftpBrowseFile;
         private TableLayoutPanel workspace;
         private SectionCard previewCard;
@@ -233,19 +235,22 @@ namespace SeccFirmwarePackager
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei UI", 9.5F); AutoScaleMode = AutoScaleMode.Dpi; BackColor = UiColors.Canvas;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
-            Button help = new RaisedButton { Name = "HelpButton", Text = "ⓘ", AccessibleName = "操作说明", Size = new Size(30, 25), Anchor = AnchorStyles.Right };
+            Button help = new RaisedButton();
+            PreparePageTab(help, "HelpButton", "! 操作说明");
+            help.Size = new Size(130, 40); help.AccessibleName = "操作说明";
+            help.BackColor = Color.FromArgb(240, 238, 232);
             help.Click += delegate { ShowHelp(); }; tooltips.SetToolTip(help, "操作说明");
             TableLayoutPanel root = new TableLayoutPanel { Name = "MainPages", Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty, BackColor = UiColors.Canvas };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             Controls.Add(root);
             FlowLayoutPanel navigation = new FlowLayoutPanel { Name = "PageNavigation", Dock = DockStyle.Fill, WrapContents = false,
-                Margin = Padding.Empty, Padding = new Padding(18, 2, 18, 0), BackColor = UiColors.Canvas };
+                Margin = Padding.Empty, Padding = new Padding(18, 0, 18, 0), BackColor = UiColors.Canvas };
             PreparePageTab(packageTab, "PackPageTab", "固件打包");
             PreparePageTab(upgradeTab, "UpgradePageTab", "设备升级");
             packageTab.Click += delegate { ShowUpgradePage(false); };
             upgradeTab.Click += delegate { ShowUpgradePage(true); };
-            navigation.Controls.Add(packageTab); navigation.Controls.Add(upgradeTab); root.Controls.Add(navigation, 0, 0);
+            navigation.Controls.Add(packageTab); navigation.Controls.Add(upgradeTab); navigation.Controls.Add(help); root.Controls.Add(navigation, 0, 0);
             Panel pageHost = new Panel { Name = "PageHost", Dock = DockStyle.Fill, Margin = Padding.Empty, BackColor = UiColors.Canvas };
             packageScroll.Name = "ContentScroll"; packageScroll.Dock = DockStyle.Fill; packageScroll.AutoScroll = true;
             upgradeScroll.Name = "UpgradeScroll"; upgradeScroll.Dock = DockStyle.Fill; upgradeScroll.AutoScroll = true;
@@ -253,7 +258,7 @@ namespace SeccFirmwarePackager
             root.Controls.Add(pageHost, 0, 1);
             ShowUpgradePage(false);
             workspace = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 3,
-                Padding = new Padding(18, 14, 18, 14), Margin = Padding.Empty };
+                Padding = new Padding(18, 4, 18, 14), Margin = Padding.Empty };
             workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55)); workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
             workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 440));
             workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
@@ -295,9 +300,6 @@ namespace SeccFirmwarePackager
             Button folderButton = new RaisedButton { Name = "BrowseFolder", Dock = DockStyle.Fill };
             ConfigureIcon(folderButton, "folder", "选择固件文件夹");
             TableLayoutPanel folderLine = (TableLayoutPanel)PathLine(folder, folderButton);
-            folderLine.ColumnCount = 3;
-            folderLine.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38));
-            folderLine.Controls.Add(help, 2, 0);
             load.Controls.Add(folderLine, 0, 0);
             Button autoLoad = MainButton("AutoLoadButton", "一键加载", true);
             Button clearAll = MainButton("ClearAllButton", "一键清理", false);
@@ -370,7 +372,9 @@ namespace SeccFirmwarePackager
         private void PreparePageTab(Button button, string name, string text)
         {
             button.Name = name; button.Text = text; button.AccessibleName = text;
-            StyleButton(button, false, false); button.Size = new Size(140, 32); button.Margin = new Padding(0, 3, 8, 3);
+            StyleButton(button, false, false);
+            Font styledFont = button.Font; button.Font = pageTabFont; styledFont.Dispose();
+            button.Size = new Size(180, 40); button.Margin = new Padding(0, 2, 8, 2);
         }
 
         private void ShowUpgradePage(bool show)
@@ -389,8 +393,10 @@ namespace SeccFirmwarePackager
             }
             pageInitialized = true; showingUpgradePage = show;
             packageScroll.Visible = !show; upgradeScroll.Visible = show;
-            packageTab.BackColor = show ? Color.FromArgb(238, 234, 242) : Color.FromArgb(219, 230, 214);
-            upgradeTab.BackColor = show ? Color.FromArgb(219, 230, 214) : Color.FromArgb(238, 234, 242);
+            packageTab.BackColor = show ? Color.FromArgb(240, 238, 232) : Color.FromArgb(219, 230, 214);
+            upgradeTab.BackColor = show ? Color.FromArgb(219, 230, 214) : Color.FromArgb(240, 238, 232);
+            packageTab.Font = show ? pageTabFont : pageTabSelectedFont;
+            upgradeTab.Font = show ? pageTabSelectedFont : pageTabFont;
         }
 
         private Button MainButton(string name, string text, bool primary)
@@ -1021,6 +1027,7 @@ namespace SeccFirmwarePackager
         {
             if (disposing) { tooltips.Dispose(); sounds.Dispose(); }
             base.Dispose(disposing);
+            if (disposing) { pageTabFont.Dispose(); pageTabSelectedFont.Dispose(); }
         }
 
         private void BuildClicked(object sender, EventArgs e)

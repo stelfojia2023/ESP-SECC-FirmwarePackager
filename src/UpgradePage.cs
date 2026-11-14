@@ -24,7 +24,7 @@ namespace SeccFirmwarePackager
         public UpgradePage()
         {
             Name = "UpgradePage"; Dock = DockStyle.Top; AutoSize = true; BackColor = UiColors.Canvas;
-            Padding = new Padding(18, 14, 18, 14); Margin = Padding.Empty;
+            Padding = new Padding(18, 4, 18, 14); Margin = Padding.Empty;
             ColumnCount = 1; RowCount = 3;
             ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             RowStyles.Add(new RowStyle(SizeType.Absolute, 120));

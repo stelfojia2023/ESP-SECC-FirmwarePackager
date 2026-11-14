@@ -28,14 +28,39 @@ internal static class UiContractTests
         Control help = Find(form, "HelpButton");
         Control folder = Find(form, "BrowseFolder");
         Control card = Find(form, "AutoLoadCard");
-        Assert(help != null && folder != null && card != null && card.Contains(help), "help is inside the upper right card");
+        Control nav = Find(form, "PageNavigation");
+        Control pack = Find(form, "PackPageTab");
+        Control upgrade = Find(form, "UpgradePageTab");
+        Assert(help != null && folder != null && card != null && nav != null && nav.Contains(help) && !card.Contains(help), "help is in page navigation");
         Assert(Find(form, "HelpStrip") == null, "help does not occupy a separate row");
-        Assert(help.Text == "ⓘ" && help.Size == new Size(30, 25), "help icon and dimensions are preserved");
+        Assert(help.Text == "! 操作说明" && help.Size == new Size(130, 40), "help uses the requested exclamation and label");
+        Assert(pack.Size == new Size(180, 40) && upgrade.Size == pack.Size && Math.Abs(pack.Font.Size - 10.5F) < 0.01F &&
+            Math.Abs(upgrade.Font.Size - 10.5F) < 0.01F, "main navigation uses uniform large buttons and text");
+        Assert(pack.Font.Bold && !upgrade.Font.Bold, "selected page has stronger text");
+        Assert(help.Parent == upgrade.Parent && upgrade.Bounds.Right <= help.Bounds.Left && upgrade.Bounds.Top == help.Bounds.Top,
+            "help is immediately after upgrade on the same row");
+        TableLayoutPanel folderLine = (TableLayoutPanel)Find(form, "FolderPath").Parent.Parent;
+        Assert(folderLine.ColumnCount == 2 && folderLine.GetControlFromPosition(1, 0) == folder, "folder row releases the old help column");
         Assert(help.Parent.ClientRectangle.Contains(help.Bounds), "help fits within its row");
         Rectangle a = help.RectangleToScreen(help.ClientRectangle);
         Rectangle b = folder.RectangleToScreen(folder.ClientRectangle);
         Assert(!a.IntersectsWith(b), "help and folder selection do not overlap");
         Assert(form.RectangleToScreen(form.ClientRectangle).Contains(a), "help is within the window viewport");
+        Control firstCard = Find(form, "FirmwareCard_PFC");
+        Rectangle navBounds = pack.RectangleToScreen(pack.ClientRectangle);
+        Rectangle cardBounds = firstCard.RectangleToScreen(firstCard.ClientRectangle);
+        Assert(Math.Abs(navBounds.Left - cardBounds.Left) <= 2 && cardBounds.Top >= navBounds.Bottom &&
+            cardBounds.Top - navBounds.Bottom <= 12, "navigation aligns with and sits close to content");
+        foreach (Control button in new[] { pack, upgrade, help })
+        {
+            Size normal = TextRenderer.MeasureText(button.Text, button.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+            using (Font enlarged = new Font(button.Font.FontFamily, button.Font.Size * 1.25F, button.Font.Style))
+            {
+                Size larger = TextRenderer.MeasureText(button.Text, enlarged, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+                Assert(button.ClientSize.Width >= Math.Max(normal.Width, larger.Width) + 12 &&
+                    button.ClientSize.Height >= Math.Max(normal.Height, larger.Height) + 4, "navigation caption fits normal and 125 percent font");
+            }
+        }
     }
     private static void CheckCompactLayout(Form form)
     {
@@ -272,6 +297,11 @@ internal static class UiContractTests
         Assert(info.Text.Contains("M4") && info.Text.Contains("V000B01D15"), "generated firmware version is shown");
         ((Button)Find(form, "UpgradePageTab")).PerformClick(); Application.DoEvents();
         Assert(page.Visible && !Find(form, "ContentScroll").Visible, "upgrade tab displays its page");
+        Assert(Find(form, "HelpButton").Visible && Find(form, "UpgradePageTab").Font.Bold && !Find(form, "PackPageTab").Font.Bold,
+            "help remains visible and selected-page emphasis switches");
+        Rectangle nav = Find(form, "UpgradePageTab").RectangleToScreen(Find(form, "UpgradePageTab").ClientRectangle);
+        Rectangle card = Find(form, "UpgradePackageCard").RectangleToScreen(Find(form, "UpgradePackageCard").ClientRectangle);
+        Assert(card.Top >= nav.Bottom && card.Top - nav.Bottom <= 12, "upgrade content sits close to the navigation");
         Assert(form.Width <= 1000 && form.Height <= 560, "upgrade page uses a compact default window");
         Assert(Find(form, "LocalUpgradeSettings").Visible && !Find(form, "RemoteUpgradeSettings").Visible, "local settings selected initially");
         Assert(!Find(form, "StartUpgradeButton").Enabled && Find(form, "UpgradeStatus").Text.Contains("尚未接入"), "unfinished protocol is explicit and disabled");
