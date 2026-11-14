@@ -172,9 +172,9 @@ namespace SeccFirmwarePackager
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei UI", 9.5F); AutoScaleMode = AutoScaleMode.Dpi; BackColor = UiColors.Canvas;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
-            Panel helpStrip = new Panel { Name = "HelpStrip", Dock = DockStyle.Top, Height = 28, BackColor = UiColors.Canvas };
-            Button help = new RaisedButton { Name = "HelpButton", Text = "ⓘ", AccessibleName = "操作说明", Size = new Size(30, 25), Anchor = AnchorStyles.Top | AnchorStyles.Right };
-            help.Location = new Point(ClientSize.Width - 48, 1); helpStrip.Controls.Add(help);
+            Panel helpStrip = new Panel { Name = "HelpStrip", Dock = DockStyle.Top, Height = 28, BackColor = UiColors.Canvas, Padding = new Padding(0, 1, 18, 2) };
+            Button help = new RaisedButton { Name = "HelpButton", Text = "ⓘ", AccessibleName = "操作说明", Size = new Size(30, 25), Dock = DockStyle.Right };
+            helpStrip.Controls.Add(help);
             help.Click += delegate { ShowHelp(); }; tooltips.SetToolTip(help, "操作说明");
             Controls.Add(helpStrip);
             Panel scroll = new Panel { Name = "ContentScroll", Dock = DockStyle.Fill, AutoScroll = true }; Controls.Add(scroll); scroll.BringToFront();

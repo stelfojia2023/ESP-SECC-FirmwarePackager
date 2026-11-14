@@ -100,6 +100,11 @@ internal static class UiContractTests
                 form.Show(); Application.DoEvents();
                 Assert(form.Text.Contains("V0.0.1"), "tool version separated from format");
                 Assert(Find(form, "HelpButton") != null && Find(form, "HelpButton").Visible, "in-content help entry exists");
+                Control helpButton = Find(form, "HelpButton");
+                Assert(helpButton.Parent.ClientRectangle.Contains(helpButton.Bounds), "help button within parent client bounds");
+                Rectangle helpInWindow = form.RectangleToClient(helpButton.RectangleToScreen(helpButton.ClientRectangle));
+                Assert(form.ClientRectangle.Contains(helpInWindow), "help button within window viewport");
+                Assert(helpButton.ClientSize.Width >= 24 && helpButton.ClientSize.Height >= 20, "help button has usable hit area");
                 Assert(Find(form, "HeaderViewButton") != null && !Find(form, "HeaderViewButton").Enabled, "header viewer disabled before generation");
                 Assert(Find(form, "FtpToggle") == null && Find(form, "FtpDialog") == null, "no FTP toggle or modal");
                 Assert(form.GetType().GetField("ftpDialog", BindingFlags.Instance | BindingFlags.NonPublic) == null, "no private FTP dialog");
