@@ -304,13 +304,13 @@ internal static class ReleaseUiTests
             RealDrag(dropTarget.Handle, input);
             WaitUntil(delegate { return Describe(dropTarget.Handle).Text == input; }, "Native file drag did not populate the input path.");
             Node droppedName = EditInMetadataRow(root, browseM4, 0);
-            if (Describe(droppedName.Handle).Text != Path.GetFileName(input)) throw new Exception("Native file drag did not populate the default name.");
+            if (Describe(droppedName.Handle).Text != Path.GetFileNameWithoutExtension(input)) throw new Exception("Native file drag did not populate the default name.");
             Click(browseM4.Handle);
             ChooseFile(id, "选择 M4 固件", input);
             Node m4Path = EditInRow(root, browseM4, 0);
             Node m4Name = EditInMetadataRow(root, browseM4, 0);
             Node m4Version = EditInMetadataRow(root, browseM4, 1);
-            if (Describe(m4Path.Handle).Text != input || Describe(m4Name.Handle).Text != Path.GetFileName(input))
+            if (Describe(m4Path.Handle).Text != input || Describe(m4Name.Handle).Text != Path.GetFileNameWithoutExtension(input))
                 throw new Exception("Browse dialog did not populate path and default firmware name.");
             Click(Button(root, "包生成", 0).Handle);
             DismissError(id, "打包失败", "版本");
