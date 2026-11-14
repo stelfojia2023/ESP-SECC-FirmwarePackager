@@ -2,6 +2,8 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Windows.Forms;
 
 // In-process form contract and render checks. NOT a substitute for interactive Windows release tests.
@@ -9,6 +11,11 @@ internal static class UiContractTests
 {
     private static int assertions;
     private static void Assert(bool value, string message) { assertions++; if (!value) throw new Exception(message); }
+    private static string Digest(string value)
+    {
+        using (SHA256 sha = SHA256.Create())
+            return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(value))).Replace("-", "").ToLowerInvariant();
+    }
     private static Control FindTree(Control root, string name)
     {
         if (root.Name == name) return root;
@@ -46,7 +53,7 @@ internal static class UiContractTests
             Assert(type.ClientSize.Width >= larger.Width + 4, "ESP32 has room for enlarged text");
         }
         int buttonWidth = Find(form, "AutoLoadButton").Width;
-        foreach (string name in new[] { "AutoLoadButton", "ClearAllButton", "HeaderViewButton", "BuildButton", "FtpUploadButton" })
+        foreach (string name in new[] { "AutoLoadButton", "ClearAllButton", "HeaderViewButton", "BuildButton", "FtpDirectoryButton", "FtpUploadButton" })
         {
             Control button = Find(form, name);
             Size caption = TextRenderer.MeasureText(button.Text, button.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
@@ -57,6 +64,10 @@ internal static class UiContractTests
         Control build = Find(form, "BuildButton");
         Assert(header.Parent == build.Parent && header.Bounds.Top == build.Bounds.Top &&
             !header.Bounds.IntersectsWith(build.Bounds) && header.Size == build.Size, "header and build share a row and size");
+        Control directory = Find(form, "FtpDirectoryButton");
+        Control upload = Find(form, "FtpUploadButton");
+        Assert(directory.Text == "打开 FTP 目录" && directory.Parent == upload.Parent && directory.Bounds.Top == upload.Bounds.Top &&
+            directory.Bounds.Right <= upload.Bounds.Left && directory.Size == upload.Size, "directory button is left of upload and shares its size");
         Assert(Find(form, "PackageCard").Contains(header) && !Find(form, "OperationResultCard").Contains(header),
             "header action is inside the package card");
         Assert(Find(form, "OpenVerifyButton") == null, "standalone package verification button is removed");
@@ -260,6 +271,10 @@ internal static class UiContractTests
             using (Form form = (Form)Activator.CreateInstance(app.GetType("SeccFirmwarePackager.MainForm"), true))
             {
                 form.Show(); Application.DoEvents();
+                Assert(Digest(Find(form, "FtpAddress").Text) == "64b4d869fb40bf0af4eea8d7f1b63532f77c4322228dca63841e57b4cf34d1f9", "requested default FTP address");
+                Assert(Digest(Find(form, "FtpUser").Text) == "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "requested default FTP user");
+                Assert(Digest(Find(form, "FtpPassword").Text) == "eb2f983bf53fe54df17ad96abf5ebd0bc414f9493647e244fc4c92f86ac11499" &&
+                    ((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "requested default FTP password is masked");
                 Assert(form.Text.Contains("V0.0.1"), "tool version separated from format");
                 Assert(Find(form, "HelpButton") != null && Find(form, "HelpButton").Visible, "in-content help entry exists");
                 Control helpButton = Find(form, "HelpButton");
@@ -295,7 +310,7 @@ internal static class UiContractTests
                 Assert(Find(form, "PreviewToggle") == null && Find(form, "FtpUsePackage") == null, "removed detail toggle and package shortcut");
                 Assert(Find(form, "FtpAddress").Visible, "FTP visible initially");
                 Assert(Find(form, "AutoLoadButton").Enabled && Find(form, "FolderPath").Enabled && Find(form, "ClearAllButton").Enabled, "batch loading and clearing enabled");
-                foreach (string name in new[] { "AutoLoadButton", "ClearAllButton", "HeaderViewButton", "BuildButton", "FtpUploadButton" })
+                foreach (string name in new[] { "AutoLoadButton", "ClearAllButton", "HeaderViewButton", "BuildButton", "FtpDirectoryButton", "FtpUploadButton" })
                     Assert(Find(form, name).Height == 40 && Math.Abs(Find(form, name).Width - Find(form, "AutoLoadButton").Width) <= 1, "uniform primary button " + name + " actual=" + Find(form, name).Size);
                 foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
                 {
@@ -362,7 +377,7 @@ internal static class UiContractTests
                 setSource.Invoke(form, new object[] { package, true });
                 Assert(((TextBox)Find(form, "FtpFilePath")).Text == package && (bool)packageMode.GetValue(form), "generated source restores verification mode");
                     MethodInfo setBusy = formType.GetMethod("SetFtpBusy", BindingFlags.Instance | BindingFlags.NonPublic);
-                    string[] guarded = { "FtpUploadButton", "FtpBrowseFile", "FtpAddress", "FtpUser", "FtpPassword", "BuildButton" };
+                    string[] guarded = { "FtpDirectoryButton", "FtpUploadButton", "FtpBrowseFile", "FtpAddress", "FtpUser", "FtpPassword", "BuildButton" };
                     setBusy.Invoke(form, new object[] { true });
                     foreach (string name in guarded) Assert(!Find(form, name).Enabled, "busy disables " + name);
                     setBusy.Invoke(form, new object[] { false });

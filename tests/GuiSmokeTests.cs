@@ -43,7 +43,7 @@ internal static class GuiSmokeTests
     {
         foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
             foreach (string prefix in new[] { "Select_", "Clear_" }) CheckButton(Find<Button>(form, prefix + type));
-        foreach (string name in new[] { "BrowseOutput", "BuildButton", "HeaderViewButton", "FtpUploadButton", "AutoLoadButton" })
+        foreach (string name in new[] { "BrowseOutput", "BuildButton", "HeaderViewButton", "FtpDirectoryButton", "FtpUploadButton", "AutoLoadButton" })
             CheckButton(Find<Button>(form, name));
     }
 
@@ -133,6 +133,64 @@ internal static class GuiSmokeTests
         Console.WriteLine("PASS FTP UI: paste parses and masks credentials, confirm upload, loopback success and failure status, server change clears credentials");
     }
 
+    private static void TestFtpDirectoryUi(MainForm form, string package, bool found)
+    {
+        FtpAddressBox address = Find<FtpAddressBox>(form, "FtpAddress");
+        TextBox status = Find<TextBox>(form, "ResultDetails");
+        Button button = Find<Button>(form, "FtpDirectoryButton");
+        using (FtpTests.Server server = new FtpTests.Server("test-user", "fake.with.dot", 226))
+        {
+            string localName = package == null ? null : Path.GetFileName(package);
+            string contents = package == null ? "" : (found ? "/upgrade/" + localName + "\r\n" : "other.bin\r\n") + "固件 空格.bin\r\n";
+            server.DirectoryData = System.Text.Encoding.UTF8.GetBytes(contents);
+            address.PasteAddress("ftp://test-user:fake.with.dot@127.0.0.1:" + server.Port + "/upgrade");
+            bool observed = false;
+            string viewError = null;
+            System.Windows.Forms.Timer inspect = new System.Windows.Forms.Timer { Interval = 20 };
+            inspect.Tick += delegate
+            {
+                Form viewer = Application.OpenForms["FtpDirectoryViewer"];
+                if (viewer == null) return;
+                try
+                {
+                    TextBox listing = Find<TextBox>(viewer, "FtpDirectoryEntries");
+                    TextBox url = Find<TextBox>(viewer, "FtpDirectoryAddress");
+                    Label summary = Find<Label>(viewer, "FtpDirectorySummary");
+                    if (!listing.ReadOnly || !url.ReadOnly || url.Text.Contains("fake.with.dot") || url.Text.Contains("@"))
+                        throw new Exception("Directory dialog leaks credentials or allows editing");
+                    if (package == null && (!summary.Text.Contains("目录为空") || listing.Text.Length != 0))
+                        throw new Exception("Empty directory is not clearly reported");
+                    if (package != null && (!listing.Text.Contains("固件 空格.bin") ||
+                        !summary.Text.Contains(found ? "已找到同名条目" : "未找到同名条目") || !summary.Text.Contains("仅比较名称")))
+                        throw new Exception("Directory entries or name-only comparison is wrong");
+                    Size before = viewer.Size;
+                    viewer.Size = viewer.MinimumSize; viewer.PerformLayout(); Application.DoEvents();
+                    if (!listing.Parent.ClientRectangle.Contains(listing.Bounds) || listing.Height < 80 ||
+                        summary.Width < TextRenderer.MeasureText(summary.Text, summary.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width)
+                        throw new Exception("Directory dialog content is clipped at minimum size");
+                    viewer.Size = before; viewer.PerformLayout();
+                    if (package != null && found)
+                        using (Bitmap image = new Bitmap(viewer.Width, viewer.Height))
+                        { viewer.DrawToBitmap(image, new Rectangle(Point.Empty, viewer.Size)); image.Save(Path.Combine(workDir, "ftp-directory.png")); }
+                    observed = true;
+                }
+                catch (Exception e) { viewError = e.Message; }
+                finally { inspect.Stop(); viewer.Close(); }
+            };
+            inspect.Start();
+            button.PerformClick();
+            if (button.Enabled || Find<Button>(form, "FtpUploadButton").Enabled)
+                throw new Exception("FTP buttons must be disabled while directory is loading");
+            WaitForStatus(status, "目录读取成功");
+            DateTime deadline = DateTime.UtcNow.AddSeconds(20);
+            while (!observed && viewError == null && DateTime.UtcNow < deadline) { Application.DoEvents(); Thread.Sleep(10); }
+            inspect.Dispose();
+            if (viewError != null) throw new Exception(viewError);
+            if (!observed || !button.Enabled || server.SawWriteCommand || server.ListedPath == null)
+                throw new Exception("Directory popup was not completed read-only");
+        }
+    }
+
     [STAThread]
     public static int Main(string[] args)
     {
@@ -170,6 +228,7 @@ internal static class GuiSmokeTests
                             throw new Exception("Automatic loading must be available");
                         if (Find<TextBox>(form, "FtpFilePath").Text != "")
                             throw new Exception("FTP source before generation must be empty");
+                        TestFtpDirectoryUi(form, null, false);
                         Application.DoEvents();
                         CheckButtonText(form);
                         foreach (string name in new[] { "BrowseOutput", "BuildButton", "HeaderViewButton" })
@@ -256,6 +315,9 @@ internal static class GuiSmokeTests
                         if (fiveReport.Text.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Length > 10)
                             throw new Exception("Five-firmware success report must fit ten lines");
                         TestFtpUi(form, allOutput);
+                        TestFtpDirectoryUi(form, allOutput, true);
+                        TestFtpDirectoryUi(form, allOutput, false);
+                        Console.WriteLine("PASS FTP directory UI: no local file, empty, matched and missing names, sizing and credential masking");
                         form.Refresh();
                         Application.DoEvents();
                         using (Bitmap picture = new Bitmap(form.Width, form.Height))

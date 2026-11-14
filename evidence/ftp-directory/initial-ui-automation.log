@@ -1,0 +1,26 @@
+PASS filename parsing assertions=74
+Desktop capture saved as candidate; inspect for active desktop/occlusion before treating it as visual proof.
+Saved native RichEdit EM_FORMATRANGE evidence (not a desktop screenshot).
+PASS header viewer assertions=4150; bounded-read implementation reviewed separately
+PASS 31 nonempty combinations, alignment, extraction and hashes
+PASS 5,628 KiB budget vector and all five expected offsets
+PASS corruption, structural rejection, firmware/whole MD5, padding and truncation
+PASS all five file hard limits: zero rejected, boundary accepted, boundary+1 rejected
+PASS invalid input, limits, hard file limits, safe output and UTF-8 limits
+PASS assertions=260552
+PASS FTP address parsing, credential masking and encoded characters
+PASS loopback FTP: 226 success and byte match, auth failure, write refusal, final 451 failure and invalid package
+PASS ordinary FTP files: non-BIN, empty, >6 MiB, exact bytes, 226/250, 530/550/451, unreadable and package-path isolation
+PASS read-only FTP listing: UTF-8 and GBK names, empty, credentials, 530/550/451, complete-list limits
+PASS FTP assertions=80
+PASS FTP UI: paste parses and masks credentials, confirm upload, loopback success and failure status, server change clears credentials
+FAIL GUI System.Exception: Directory failure dialog was not dismissed
+   在 GuiSmokeTests.TestFtpDirectoryFailure(MainForm form)
+   在 GuiSmokeTests.<>c__DisplayClasse.<Main>b__d()
+GUI smoke test failed.
+所在位置 C:\Users\zhangyy\AppData\Local\Temp\secc-ftp-directory._vesbc2n\work\tests\run-tests.ps1:47 字符: 28
++ if ($LASTEXITCODE -ne 0) { throw 'GUI smoke test failed.' }
++                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (GUI smoke test failed.:String) [], RuntimeException
+    + FullyQualifiedErrorId : GUI smoke test failed.
+ 

@@ -126,6 +126,54 @@ namespace SeccFirmwarePackager
         }
     }
 
+    internal sealed class FtpDirectoryViewer : Form
+    {
+        public FtpDirectoryViewer(FtpDirectoryResult result, string localName)
+        {
+            Text = "FTP 目录"; Name = "FtpDirectoryViewer";
+            Font = new Font("Microsoft YaHei UI", 9F);
+            BackColor = UiColors.Canvas; AutoScaleMode = AutoScaleMode.Dpi;
+            StartPosition = FormStartPosition.CenterParent; ShowInTaskbar = false;
+            Size = new Size(650, Math.Min(460, Math.Max(260, 215 + result.Entries.Length * 22)));
+            MinimumSize = new Size(480, 260); Padding = new Padding(14);
+
+            TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty };
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            Controls.Add(layout);
+            TextBox directory = new TextBox { Name = "FtpDirectoryAddress", ReadOnly = true, Text = result.DirectoryUrl, AccessibleName = "FTP 目录地址" };
+            directory.TabStop = false;
+            layout.Controls.Add(new SoftField(directory, false) { Dock = DockStyle.Fill, Margin = Padding.Empty }, 0, 0);
+            string summary = result.Entries.Length == 0 ? "目录为空" : "目录共 " + result.Entries.Length + " 个条目";
+            if (!String.IsNullOrEmpty(localName))
+                summary += ContainsName(result.Entries, localName) ? " · 已找到同名条目（仅比较名称）" : " · 未找到同名条目（仅比较名称）";
+            Label info = new Label { Name = "FtpDirectorySummary", Text = summary, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiColors.Muted };
+            layout.Controls.Add(info, 0, 1);
+            TextBox listing = new TextBox { Name = "FtpDirectoryEntries", Multiline = true, ReadOnly = true, WordWrap = false,
+                ScrollBars = ScrollBars.Both, Dock = DockStyle.Fill, BackColor = UiColors.Card, ForeColor = UiColors.Ink,
+                AccessibleName = "服务器返回的目录条目", Text = String.Join("\r\n", result.Entries) };
+            layout.Controls.Add(listing, 0, 2);
+            Shown += delegate { listing.Focus(); listing.Select(0, 0); };
+            Button close = new RaisedButton { Name = "FtpDirectoryClose", Text = "关闭", Width = 100, Height = 32,
+                BackColor = UiColors.SoftBlue, ForeColor = UiColors.Ink, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
+            close.Click += delegate { Close(); };
+            layout.Controls.Add(close, 0, 3); CancelButton = close;
+        }
+
+        private static bool ContainsName(string[] entries, string name)
+        {
+            foreach (string entry in entries)
+            {
+                int slash = entry.LastIndexOf('/');
+                if (String.Equals(slash < 0 ? entry : entry.Substring(slash + 1), name, StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
+    }
+
     public sealed class MainForm : Form
     {
         private sealed class Row
@@ -148,6 +196,7 @@ namespace SeccFirmwarePackager
         private readonly TextBox ftpUser = new TextBox();
         private readonly TextBox ftpPassword = new TextBox();
         private readonly Button ftpUpload = new RaisedButton();
+        private readonly Button ftpDirectory = new RaisedButton();
         private readonly Label ftpStatus = new Label();
         private readonly ToolTip tooltips = new ToolTip();
         private readonly UiSounds sounds = new UiSounds();
@@ -162,6 +211,7 @@ namespace SeccFirmwarePackager
         private bool ftpPackageSource = true;
         private string ftpAuthority;
         private bool ftpBusy;
+        private bool ftpListing;
         private bool changing;
         private string lastPreviewMessage;
 
@@ -258,11 +308,16 @@ namespace SeccFirmwarePackager
             ftpAddress.KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; ApplyFtpAddress(ftpAddress.Text, true); } };
             ftpUser.Name = "FtpUser"; ftpUser.AccessibleName = "FTP 用户名";
             ftpPassword.Name = "FtpPassword"; ftpPassword.UseSystemPasswordChar = true; ftpPassword.AccessibleName = "FTP 密码";
+            ftpAddress.Text = "ftp://113.200.149.194/upgrade";
+            ftpUser.Text = "test";
+            ftpPassword.Text = "1234.com";
+            ftpAuthority = FtpUploader.ParseAddress(ftpAddress.Text).DirectoryUri.GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped);
             ftp.Controls.Add(LabeledLine("URL", new SoftField(ftpAddress, false) { Dock = DockStyle.Fill }), 0, 1);
             ftp.Controls.Add(LabeledLine("用户名", new SoftField(ftpUser, false) { Dock = DockStyle.Fill }), 0, 2);
             ftp.Controls.Add(LabeledLine("密码", new SoftField(ftpPassword, false) { Dock = DockStyle.Fill }), 0, 3);
             ftpUpload.Name = "FtpUploadButton"; ftpUpload.Text = "上传到 FTP"; SetupMainButton(ftpUpload, true); ftpUpload.Click += FtpUploadClicked;
-            ftp.Controls.Add(RightActions(ftpUpload), 0, 4); ftpCard.Controls.Add(ftp); right.Controls.Add(ftpCard, 0, 2);
+            ftpDirectory.Name = "FtpDirectoryButton"; ftpDirectory.Text = "打开 FTP 目录"; SetupMainButton(ftpDirectory, false); ftpDirectory.Click += FtpDirectoryClicked;
+            ftp.Controls.Add(RightActions(ftpDirectory, ftpUpload), 0, 4); ftpCard.Controls.Add(ftp); right.Controls.Add(ftpCard, 0, 2);
             ftpStatus.TextChanged += delegate { details.ForeColor = ftpStatus.ForeColor; details.Text = ftpStatus.Text; };
             FormClosing += FtpFormClosing;
             grid.Name = "PreviewGrid"; grid.Dock = DockStyle.Fill; grid.ReadOnly = true;
@@ -476,7 +531,7 @@ namespace SeccFirmwarePackager
                 help.Text = "操作说明"; help.StartPosition = FormStartPosition.CenterParent;
                 help.Size = new Size(650, 520); help.MinimumSize = new Size(480, 360); help.BackColor = UiColors.Canvas;
                 TextBox text = new TextBox { Name = "HelpText", Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = UiColors.Canvas, Font = Font };
-                text.Text = "文件与版本\r\n名称为文件名去掉 .bin；版本取下划线后的 V/v 至下一个下划线或点，保留大小写。名称/版本可修改，最多 96/64 个 UTF-8 字节。手动选入缺版本文件后须补填才能生成。\r\n\r\n一键加载\r\n仅扫描当前文件夹；按开头 PFC、LLC、M4、PLC、ESP32 识别 .bin，大小写不敏感。同类唯一且有效才更新；多文件、缺版本或无效项保留原选择并提示。一键清理不删除磁盘文件，不清 FTP 配置和输出位置。\r\n\r\n大小限制\r\n文件不可为空。PFC/LLC：256,000 字节（250 KiB）；M4：524,288 字节（512 KiB）；PLC：2,097,152 字节（2 MiB）；ESP32：2,621,440 字节（2.5 MiB）。整包最多 6,291,456 字节（6 MiB），含包头和对齐。加载和生成都会检查。\r\n\r\nFTP\r\n生成后默认上传该联合包，也可独立选任意本地文件。联合包上传前校验；普通文件不做包格式校验。普通 FTP 明文传输，服务器同名文件可能覆盖，上传前请核对。\r\n\r\n查看包头\r\n生成成功后可查看本次包最前 4096 字节；只读，不改变文件，也不读取后续固件内容。地址范围 0x0000～0x0FFF。";
+                text.Text = "文件与版本\r\n名称为文件名去掉 .bin；版本取下划线后的 V/v 至下一个下划线或点，保留大小写。名称/版本可修改，最多 96/64 个 UTF-8 字节。手动选入缺版本文件后须补填才能生成。\r\n\r\n一键加载\r\n仅扫描当前文件夹；按开头 PFC、LLC、M4、PLC、ESP32 识别 .bin，大小写不敏感。同类唯一且有效才更新；多文件、缺版本或无效项保留原选择并提示。一键清理不删除磁盘文件，不清 FTP 配置和输出位置。\r\n\r\n大小限制\r\n文件不可为空。PFC/LLC：256,000 字节（250 KiB）；M4：524,288 字节（512 KiB）；PLC：2,097,152 字节（2 MiB）；ESP32：2,621,440 字节（2.5 MiB）。整包最多 6,291,456 字节（6 MiB），含包头和对齐。加载和生成都会检查。\r\n\r\nFTP\r\n生成后默认上传该联合包，也可独立选任意本地文件。联合包上传前校验；普通文件不做包格式校验。打开 FTP 目录可查看服务器返回条目，同名仅比较名称。普通 FTP 明文传输，服务器同名文件可能覆盖。\r\n\r\n查看包头\r\n生成成功后可查看本次包最前 4096 字节；只读，不改变文件，也不读取后续固件内容。地址范围 0x0000～0x0FFF。";
                 help.Padding = new Padding(20); help.Controls.Add(text);
                 help.Shown += delegate { text.Select(0, 0); };
                 help.ShowDialog(this);
@@ -795,6 +850,56 @@ namespace SeccFirmwarePackager
             }
         }
 
+        private void FtpDirectoryClicked(object sender, EventArgs e)
+        {
+            if (ftpBusy || !ApplyFtpAddress(ftpAddress.Text, true)) return;
+            if (String.IsNullOrWhiteSpace(ftpUser.Text))
+            {
+                ftpStatus.ForeColor = Color.FromArgb(181, 50, 57);
+                ftpStatus.Text = "打开 FTP 目录失败：请输入 FTP 用户名。";
+                MessageBox.Show(this, "请输入 FTP 用户名。", "打开 FTP 目录失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            string address = ftpAddress.Text, username = ftpUser.Text, password = ftpPassword.Text;
+            string localName = String.IsNullOrEmpty(ftpFile.Text) ? null : Path.GetFileName(ftpFile.Text);
+            ftpListing = true;
+            SetFtpBusy(true);
+            ftpStatus.ForeColor = UiColors.Blue;
+            ftpStatus.Text = "正在读取 FTP 目录…";
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                FtpDirectoryResult result = null;
+                string error = null;
+                try { result = FtpUploader.ListDirectory(address, username, password); }
+                catch (InvalidDataException ex) { error = ex.Message; }
+                catch (Exception) { error = "读取 FTP 目录时发生错误，请检查网络和服务器状态。"; }
+                try
+                {
+                    if (IsDisposed || !IsHandleCreated) return;
+                    BeginInvoke(new MethodInvoker(delegate
+                    {
+                        if (IsDisposed) return;
+                        ftpListing = false;
+                        SetFtpBusy(false);
+                        if (result != null)
+                        {
+                            ftpStatus.ForeColor = Color.FromArgb(29, 120, 88);
+                            ftpStatus.Text = "目录读取成功：共 " + result.Entries.Length + " 个条目。";
+                            using (FtpDirectoryViewer viewer = new FtpDirectoryViewer(result, localName)) viewer.ShowDialog(this);
+                        }
+                        else
+                        {
+                            ftpStatus.ForeColor = Color.FromArgb(181, 50, 57);
+                            sounds.Play("failure");
+                            ftpStatus.Text = "打开 FTP 目录失败：" + error;
+                            MessageBox.Show(this, error, "打开 FTP 目录失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }));
+                }
+                catch (InvalidOperationException) { }
+            });
+        }
+
         private void StartFtpUpload(string path, string address, string username, string password)
         {
             StartFtpTransfer(path, address, username, password, true);
@@ -802,6 +907,7 @@ namespace SeccFirmwarePackager
 
         private void StartFtpTransfer(string path, string address, string username, string password, bool package)
         {
+            ftpListing = false;
             SetFtpBusy(true);
             ftpStatus.ForeColor = UiColors.Blue;
             ftpStatus.Text = (package ? "正在校验联合包并上传：" : "正在上传本地文件：") + Path.GetFileName(path);
@@ -843,6 +949,7 @@ namespace SeccFirmwarePackager
         {
             ftpBusy = busy;
             ftpUpload.Enabled = !busy;
+            ftpDirectory.Enabled = !busy;
             ftpBrowseFile.Enabled = !busy;
             ftpFile.Enabled = !busy;
 
@@ -854,7 +961,7 @@ namespace SeccFirmwarePackager
 
         private void FtpFormClosing(object sender, FormClosingEventArgs e)
         {
-            if (ftpBusy && MessageBox.Show(this, "上传仍在进行。关闭可能中断传输，并在服务器上留下不完整文件。确定关闭？",
+            if (ftpBusy && !ftpListing && MessageBox.Show(this, "上传仍在进行。关闭可能中断传输，并在服务器上留下不完整文件。确定关闭？",
                 "上传进行中", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
                 e.Cancel = true;
         }

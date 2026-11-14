@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Text;
 
 namespace SeccFirmwarePackager
 {
@@ -17,6 +19,13 @@ namespace SeccFirmwarePackager
         public string RemoteUrl;
         public int StatusCode;
         public long Bytes;
+    }
+
+    public sealed class FtpDirectoryResult
+    {
+        public string DirectoryUrl;
+        public string[] Entries;
+        public string EncodingName;
     }
 
     public static class FtpUploader
@@ -72,6 +81,104 @@ namespace SeccFirmwarePackager
             string prefix = location.DirectoryUri.AbsoluteUri;
             if (!prefix.EndsWith("/", StringComparison.Ordinal)) prefix += "/";
             return new Uri(prefix + Uri.EscapeDataString(fileName), UriKind.Absolute);
+        }
+
+        // NLST is read-only. Report success only after the server confirms the
+        // complete transfer; a partial listing must not be mistaken for absence.
+        public static FtpDirectoryResult ListDirectory(string address, string username, string password)
+        {
+            FtpLocation location = ParseAddress(address);
+            if (location.HasCredentials)
+            {
+                username = location.Username;
+                password = location.Password;
+            }
+            ValidateCredentials(username, password);
+            string directory = location.DirectoryUri.AbsoluteUri;
+            if (!directory.EndsWith("/", StringComparison.Ordinal)) directory += "/";
+            FtpWebRequest request = null;
+            bool completed = false;
+            try
+            {
+                request = (FtpWebRequest)WebRequest.Create(new Uri(directory));
+                request.Method = WebRequestMethods.Ftp.ListDirectory;
+                request.Credentials = new NetworkCredential(username, password ?? "");
+                request.UseBinary = true;
+                request.UsePassive = true;
+                request.KeepAlive = false;
+                request.Proxy = null;
+                request.Timeout = 60000;
+                request.ReadWriteTimeout = 60000;
+                byte[] bytes;
+                int code;
+                using (FtpWebResponse response = (FtpWebResponse)request.GetResponse())
+                {
+                    using (Stream stream = response.GetResponseStream())
+                    using (MemoryStream content = new MemoryStream())
+                    {
+                        byte[] buffer = new byte[8192];
+                        int count;
+                        while ((count = stream.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            if (content.Length + count > 4 * 1024 * 1024)
+                                throw new InvalidDataException("FTP 目录内容超过 4 MiB，无法完整显示。");
+                            content.Write(buffer, 0, count);
+                        }
+                        bytes = content.ToArray();
+                    }
+                    code = (int)response.StatusCode;
+                    if (code != 226 && code != 250)
+                        throw new InvalidDataException("FTP 服务器未确认目录读取完成（状态 " + code + "）。");
+                }
+                string listing;
+                string encodingName = "UTF-8";
+                try { listing = new UTF8Encoding(false, true).GetString(bytes); }
+                catch (DecoderFallbackException)
+                {
+                    try
+                    {
+                        listing = Encoding.GetEncoding(936, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback).GetString(bytes);
+                        encodingName = "GBK";
+                    }
+                    catch (DecoderFallbackException)
+                    {
+                        throw new InvalidDataException("无法识别 FTP 目录字符编码，请检查服务器编码。");
+                    }
+                }
+                List<string> entries = new List<string>();
+                using (StringReader reader = new StringReader(listing))
+                {
+                    string line;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        if (line.Length == 0) continue;
+                        if (entries.Count >= 10000)
+                            throw new InvalidDataException("FTP 目录超过 10,000 个条目，无法完整显示。");
+                        entries.Add(line);
+                    }
+                }
+                completed = true;
+                return new FtpDirectoryResult { DirectoryUrl = directory, Entries = entries.ToArray(), EncodingName = encodingName };
+            }
+            catch (WebException e)
+            {
+                int code = 0;
+                FtpWebResponse response = e.Response as FtpWebResponse;
+                if (response != null) { code = (int)response.StatusCode; response.Close(); }
+                if (code == 530) throw new InvalidDataException("FTP 认证失败（530），请核对用户名和密码。");
+                if (code == 550) throw new InvalidDataException("FTP 拒绝读取目录（550），请检查目标目录及权限。");
+                if (code != 0) throw new InvalidDataException("FTP 服务器返回失败（" + code + "）。");
+                if (e.Status == WebExceptionStatus.Timeout) throw new InvalidDataException("FTP 连接或读取目录超时。");
+                if (e.Status == WebExceptionStatus.NameResolutionFailure) throw new InvalidDataException("无法解析 FTP 服务器地址。");
+                if (e.Status == WebExceptionStatus.ConnectFailure) throw new InvalidDataException("无法连接 FTP 服务器。");
+                throw new InvalidDataException("FTP 连接或读取目录失败，请检查网络、目录及服务器状态。");
+            }
+            catch (InvalidDataException) { throw; }
+            catch (IOException) { throw new InvalidDataException("读取 FTP 目录失败，请检查网络及服务器状态。"); }
+            finally
+            {
+                if (!completed && request != null) try { request.Abort(); } catch (Exception) { }
+            }
         }
 
         public static FtpUploadResult Upload(string packagePath, string address, string username, string password)

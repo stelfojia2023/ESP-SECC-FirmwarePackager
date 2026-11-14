@@ -18,6 +18,9 @@ internal static class FtpTests
         public int Port { get { return ((IPEndPoint)listener.LocalEndpoint).Port; } }
         public byte[] Uploaded;
         public string StoredPath;
+        public byte[] DirectoryData;
+        public string ListedPath;
+        public bool SawWriteCommand;
         public Exception Error;
 
         public Server(string user, string password, int code)
@@ -75,6 +78,7 @@ internal static class FtpTests
                                     "227 Entering Passive Mode (127,0,0,1," + (p / 256) + "," + (p % 256) + ")");
                                 break;
                             case "STOR":
+                                SawWriteCommand = true;
                                 StoredPath = value.StartsWith("/") ? value : current.TrimEnd('/') + "/" + value;
                                 if (finalCode == 550) { writer.WriteLine("550 Cannot store file"); break; }
                                 if (passive == null) { writer.WriteLine("425 No data connection"); break; }
@@ -85,6 +89,20 @@ internal static class FtpTests
                                 {
                                     incoming.CopyTo(received);
                                     Uploaded = received.ToArray();
+                                }
+                                passive.Stop(); passive = null;
+                                writer.WriteLine(finalCode == 226 ? "226 Transfer complete" : (finalCode == 250 ? "250 Transfer complete" : "451 Transfer failed after data"));
+                                break;
+                            case "NLST":
+                                ListedPath = value.Length == 0 ? current : (value.StartsWith("/") ? value : current.TrimEnd('/') + "/" + value);
+                                if (finalCode == 550) { writer.WriteLine("550 Cannot list directory"); break; }
+                                if (passive == null) { writer.WriteLine("425 No data connection"); break; }
+                                writer.WriteLine("150 Open data connection");
+                                using (TcpClient data = passive.AcceptTcpClient())
+                                using (NetworkStream outgoing = data.GetStream())
+                                {
+                                    byte[] listing = DirectoryData ?? new byte[0];
+                                    outgoing.Write(listing, 0, listing.Length);
                                 }
                                 passive.Stop(); passive = null;
                                 writer.WriteLine(finalCode == 226 ? "226 Transfer complete" : (finalCode == 250 ? "250 Transfer complete" : "451 Transfer failed after data"));
@@ -242,6 +260,62 @@ internal static class FtpTests
         Console.WriteLine("PASS ordinary FTP files: non-BIN, empty, >6 MiB, exact bytes, 226/250, 530/550/451, unreadable and package-path isolation");
     }
 
+    private static void DirectoryTests()
+    {
+        using (Server server = new Server("list-user", "list-secret", 226))
+        {
+            server.DirectoryData = Encoding.UTF8.GetBytes("PFC_TEST_V001.bin\r\n固件 空格.bin\r\n/upgrade/subdir\r\n");
+            string address = "ftp://list-user:list-secret@127.0.0.1:" + server.Port + "/upgrade";
+            FtpDirectoryResult result = FtpUploader.ListDirectory(address, "", "");
+            Check(result.Entries.Length == 3 && result.Entries[0] == "PFC_TEST_V001.bin" &&
+                result.Entries[1] == "固件 空格.bin" && result.Entries[2] == "/upgrade/subdir", "Directory names mismatch");
+            Check(result.EncodingName == "UTF-8" && !result.DirectoryUrl.Contains("list-user") &&
+                !result.DirectoryUrl.Contains("list-secret") && !result.DirectoryUrl.Contains("@"), "Listing exposed credentials or wrong encoding");
+            Check(server.ListedPath.TrimEnd('/') == "/upgrade" && !server.SawWriteCommand && server.Uploaded == null, "Listing changed server or wrong directory");
+        }
+        using (Server server = new Server("list-user", "list-secret", 250))
+        {
+            FtpDirectoryResult result = FtpUploader.ListDirectory("ftp://127.0.0.1:" + server.Port + "/empty/", "list-user", "list-secret");
+            Check(result.Entries.Length == 0 && !server.SawWriteCommand, "Empty directory was not returned safely");
+        }
+        using (Server server = new Server("list-user", "list-secret", 226))
+        {
+            server.DirectoryData = Encoding.GetEncoding(936).GetBytes("固件 版本.bin\r\n");
+            FtpDirectoryResult result = FtpUploader.ListDirectory("ftp://127.0.0.1:" + server.Port + "/files", "list-user", "list-secret");
+            Check(result.Entries.Length == 1 && result.Entries[0] == "固件 版本.bin" && result.EncodingName == "GBK", "GBK listing was not decoded");
+        }
+        using (Server server = new Server("correct", "list-secret", 226))
+        {
+            string address = "ftp://wrong:private-value@127.0.0.1:" + server.Port + "/upgrade";
+            MustFail(delegate { FtpUploader.ListDirectory(address, "", ""); }, "认证失败", "private-value");
+            Check(!server.SawWriteCommand && server.ListedPath == null, "Authentication failure must not list or upload");
+        }
+        using (Server server = new Server("list-user", "list-secret", 550))
+        {
+            MustFail(delegate { FtpUploader.ListDirectory("ftp://127.0.0.1:" + server.Port + "/missing", "list-user", "list-secret"); }, "拒绝读取", "list-secret");
+            Check(!server.SawWriteCommand, "Refused listing must not upload");
+        }
+        using (Server server = new Server("list-user", "list-secret", 451))
+        {
+            server.DirectoryData = Encoding.UTF8.GetBytes("partial.bin\r\n");
+            MustFail(delegate { FtpUploader.ListDirectory("ftp://127.0.0.1:" + server.Port + "/files", "list-user", "list-secret"); }, "失败", "list-secret");
+            Check(!server.SawWriteCommand, "Failed listing must not upload");
+        }
+        using (Server server = new Server("list-user", "list-secret", 226))
+        {
+            StringBuilder many = new StringBuilder();
+            for (int i = 0; i < 10001; i++) many.Append("item").Append(i).Append("\r\n");
+            server.DirectoryData = Encoding.UTF8.GetBytes(many.ToString());
+            MustFail(delegate { FtpUploader.ListDirectory("ftp://127.0.0.1:" + server.Port + "/files", "list-user", "list-secret"); }, "10,000", "list-secret");
+        }
+        using (Server server = new Server("list-user", "list-secret", 226))
+        {
+            server.DirectoryData = new byte[4 * 1024 * 1024 + 1];
+            MustFail(delegate { FtpUploader.ListDirectory("ftp://127.0.0.1:" + server.Port + "/files", "list-user", "list-secret"); }, "4 MiB", "list-secret");
+        }
+        Console.WriteLine("PASS read-only FTP listing: UTF-8 and GBK names, empty, credentials, 530/550/451, complete-list limits");
+    }
+
     public static int Main(string[] args)
     {
         try
@@ -253,6 +327,7 @@ internal static class FtpTests
             AddressTests();
             UploadTests(Path.GetFullPath(args[0]), work);
             OrdinaryFileTests(work);
+            DirectoryTests();
             Console.WriteLine("PASS FTP assertions=" + checks);
             return 0;
         }

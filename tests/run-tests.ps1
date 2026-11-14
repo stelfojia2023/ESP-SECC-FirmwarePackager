@@ -49,6 +49,15 @@ if ($LASTEXITCODE -ne 0) { throw 'GUI smoke test failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Release GUI test compilation failed.' }
 & $releaseTestExe $releaseExe (Join-Path $testRoot 'release gui results') $previousSample
 if ($LASTEXITCODE -ne 0) { throw 'Release GUI test failed.' }
+$releaseFtpTestExe = Join-Path $testRoot 'ReleaseFtpDirectoryTests.exe'
+& $csc /nologo /codepage:65001 /target:exe /platform:x64 /main:ReleaseFtpDirectoryTests "/out:$releaseFtpTestExe" $core $ftp $ftpTest (Join-Path $root 'tests\ReleaseFtpDirectoryTests.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Standalone FTP directory test compilation failed.' }
+$standalone = Join-Path $testRoot 'standalone'
+New-Item -ItemType Directory -Path $standalone | Out-Null
+$standaloneExe = Join-Path $standalone 'FirmwarePackager.exe'
+Copy-Item -LiteralPath $releaseExe -Destination $standaloneExe
+& $releaseFtpTestExe $standaloneExe
+if ($LASTEXITCODE -ne 0) { throw 'Standalone FTP directory test failed.' }
 Write-Host "Test evidence: $testRoot"
 Write-Host 'Run the independent Python verifier separately as described in README.md.'
 
