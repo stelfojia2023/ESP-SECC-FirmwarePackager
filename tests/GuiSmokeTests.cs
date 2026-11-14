@@ -308,3 +308,4 @@ internal static class GuiSmokeTests
         return result;
     }
 }
+

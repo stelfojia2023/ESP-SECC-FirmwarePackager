@@ -64,3 +64,4 @@ python .\tests\verify_vector.py .\test-vectors
 ```
 
 测试会创建自己的新临时目录，不覆盖已有测试证据。请不要把测试数据误当成正式固件。
+

@@ -890,3 +890,4 @@ namespace SeccFirmwarePackager
         }
     }
 }
+

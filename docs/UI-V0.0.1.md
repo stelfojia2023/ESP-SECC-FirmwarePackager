@@ -19,7 +19,7 @@
 
 - `build.ps1`：Windows 原生 .NET Framework 编译，三个声音资源内嵌，产出 `dist/FirmwarePackager.exe`。
 - `.github/workflows/windows-build.yml`：只读权限，官方 checkout/upload-artifact 固定版本；构建、核心、FTP、UI 控件契约及独立 Python 校验，不部署。
-- `tests/UiContractTests.cs`：验证版本、功能控件、声音资源、折叠/展开/静音和绘制，不替代真实鼠标/键盘/拖放测试。
+- `tests/UiContractTests.cs`：验证版本、功能控件、声音资源、折叠/展开、默认音效开启与无音效开关，以及绘制，不替代真实鼠标/键盘/拖放测试。
 - `tests/run-tests.ps1`：仍需解锁的真实 Windows 桌面，运行原有完整交互回归。
 
 本次本地环境为 Linux：Mono 交叉编译成功，参考向量独立验证通过，FTP 原30项及新增独立文件场景共62断言通过；核心测试通过组合/预算/损坏阶段后在 Windows 硬链接 API 停止，因此不标记完整核心通过。Linux Mono 控件契约与临时显示会话的布局截图已检查；此结果不等于真实 Windows GUI、DPI、原生拖放或音频体验通过，这些仍待实机确认。Windows CI 结果以对应提交的运行记录为准，不沿用旧版 evidence。
