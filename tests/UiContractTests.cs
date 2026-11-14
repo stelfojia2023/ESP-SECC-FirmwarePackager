@@ -552,6 +552,15 @@ internal static class UiContractTests
                 Assert(Find(form, "FtpPassword").Text == "" &&
                     ((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "empty FTP password is masked");
                 Assert(form.Text.Contains("V0.0.3"), "tool version separated from format");
+                MethodInfo applyAddress = form.GetType().GetMethod("ApplyFtpAddress", BindingFlags.Instance | BindingFlags.NonPublic);
+                Find(form, "FtpUser").Text = "synthetic-first";
+                Find(form, "FtpPassword").Text = "synthetic-only";
+                Assert((bool)applyAddress.Invoke(form, new object[] { "ftp://example.invalid/first/", false }), "first FTP address accepted");
+                Assert(Find(form, "FtpUser").Text == "synthetic-first" && Find(form, "FtpPassword").Text == "synthetic-only", "first server keeps newly entered credentials");
+                Assert((bool)applyAddress.Invoke(form, new object[] { "ftp://other.invalid/second/", false }), "changed FTP address accepted");
+                Assert(Find(form, "FtpUser").Text == "" && Find(form, "FtpPassword").Text == "", "changing server clears previous credentials");
+                Find(form, "FtpAddress").Text = "";
+
                 Assert(Find(form, "HelpButton").Size == Find(form, "PackPageTab").Size && Find(form, "HelpButton").Size == Find(form, "UpgradePageTab").Size, "help and page tabs have equal sizes");
                 Assert(Find(form, "HelpButton") != null && Find(form, "HelpButton").Visible, "in-content help entry exists");
                 Control helpButton = Find(form, "HelpButton");
