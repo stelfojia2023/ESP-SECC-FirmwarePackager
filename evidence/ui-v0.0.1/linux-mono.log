@@ -1,0 +1,6 @@
+Modal FTP revision, Linux Mono supplementary verification
+df97b2a64fbed46094a7607ff796ef630ac695c316021bb28a9a66ec58b41c3a  /tmp/mono-validation/modal-final/FirmwarePackager.exe
+PASS UI contract assertions=68 (not native interactive GUI validation)
+CONTRACT_EXIT=0
+PASS visible WinForms UI: button text spacing at default and minimum sizes, 125 percent font metrics, drag handlers, manual input, five-file preview, generate, verify, budget warning and small window
+PORTABLE_EXIT=0

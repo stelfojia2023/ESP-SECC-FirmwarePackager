@@ -188,6 +188,60 @@ internal static class FtpTests
         Console.WriteLine("PASS loopback FTP: 226 success and byte match, auth failure, write refusal, final 451 failure and invalid package");
     }
 
+    private static void OrdinaryFileTests(string work)
+    {
+        string textPath = Path.Combine(work, "普通 文件.txt");
+        byte[] text = Encoding.UTF8.GetBytes("ordinary text; not a SECC package\r\n");
+        File.WriteAllBytes(textPath, text);
+        string emptyPath = Path.Combine(work, "empty.data");
+        File.WriteAllBytes(emptyPath, new byte[0]);
+        string largePath = Path.Combine(work, "large-image.dat");
+        byte[] large = new byte[Packager.MaxPackageSize + 731];
+        for (int i = 0; i < large.Length; i++) large[i] = (byte)(i * 31);
+        File.WriteAllBytes(largePath, large);
+        string[] paths = { textPath, emptyPath, largePath };
+        byte[][] contents = { text, new byte[0], large };
+        for (int i = 0; i < paths.Length; i++)
+        {
+            int final = i == 1 ? 250 : 226;
+            using (Server server = new Server("plain-user", "plain-secret", final))
+            {
+                string address = "ftp://plain-user:plain-secret@127.0.0.1:" + server.Port + "/files";
+                FtpUploadResult result = FtpUploader.UploadFile(paths[i], address, "", "");
+                Check(result.StatusCode == final && result.Bytes == contents[i].LongLength, "Ordinary file count or completion mismatch");
+                Check(server.Uploaded != null && Convert.ToBase64String(server.Uploaded) == Convert.ToBase64String(contents[i]), "Ordinary file bytes mismatch");
+                Check(server.StoredPath == "/files/" + Path.GetFileName(paths[i]), "Ordinary remote file path mismatch");
+                Check(!result.RemoteUrl.Contains("plain-secret") && !result.RemoteUrl.Contains("plain-user"), "Ordinary result exposes credentials");
+                Check(server.Error == null, "Ordinary FTP fixture error");
+            }
+        }
+        // The existing package-only entry point must not become a generic upload path.
+        MustFail(delegate { FtpUploader.Upload(largePath, "ftp://127.0.0.1/files", "plain-user", "plain-secret"); }, "6 MiB", "plain-secret");
+        MustFail(delegate { FtpUploader.Upload(textPath, "ftp://127.0.0.1/files", "plain-user", "plain-secret"); }, "截断", "plain-secret");
+        using (Server server = new Server("plain-user", "plain-secret", 550))
+        {
+            string address = "ftp://127.0.0.1:" + server.Port + "/files";
+            MustFail(delegate { FtpUploader.UploadFile(textPath, address, "plain-user", "plain-secret"); }, "拒绝写入", "plain-secret");
+            Check(server.Uploaded == null, "Refused ordinary upload must not transfer bytes");
+        }
+        using (Server server = new Server("plain-user", "plain-secret", 451))
+        {
+            string address = "ftp://127.0.0.1:" + server.Port + "/files";
+            MustFail(delegate { FtpUploader.UploadFile(textPath, address, "plain-user", "plain-secret"); }, "451", "plain-secret");
+            Check(server.Uploaded != null && server.Uploaded.Length == text.Length, "Final ordinary failure must follow data transfer");
+        }
+        using (Server server = new Server("plain-user", "plain-secret", 226))
+        {
+            string address = "ftp://wrong:private-value@127.0.0.1:" + server.Port + "/files";
+            MustFail(delegate { FtpUploader.UploadFile(textPath, address, "", ""); }, "认证失败", "private-value");
+            Check(server.Uploaded == null, "Ordinary authentication failure must not upload");
+        }
+        MustFail(delegate { FtpUploader.UploadFile(Path.Combine(work, "missing-private-value.txt"), "ftp://127.0.0.1/files", "u", "private-value"); }, "不可读取", "private-value");
+        using (FileStream locked = new FileStream(textPath, FileMode.Open, FileAccess.Write, FileShare.None))
+            MustFail(delegate { FtpUploader.UploadFile(textPath, "ftp://127.0.0.1/files", "u", "private-value"); }, "不可读取", "private-value");
+        Console.WriteLine("PASS ordinary FTP files: non-BIN, empty, >6 MiB, exact bytes, 226/250, 530/550/451, unreadable and package-path isolation");
+    }
+
     public static int Main(string[] args)
     {
         try
@@ -198,9 +252,11 @@ internal static class FtpTests
             Directory.CreateDirectory(work);
             AddressTests();
             UploadTests(Path.GetFullPath(args[0]), work);
+            OrdinaryFileTests(work);
             Console.WriteLine("PASS FTP assertions=" + checks);
             return 0;
         }
         catch (Exception e) { Console.Error.WriteLine("FAIL FTP " + e.Message); return 1; }
     }
 }
+

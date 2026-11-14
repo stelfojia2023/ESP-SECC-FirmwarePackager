@@ -7,6 +7,7 @@ New-Item -ItemType Directory -Path $testRoot | Out-Null
 $core = Join-Path $root 'src\Packager.cs'
 $ftp = Join-Path $root 'src\FtpUploader.cs'
 $form = Join-Path $root 'src\MainForm.cs'
+$ui = Join-Path $root 'src\UiControls.cs'
 $coreTest = Join-Path $root 'tests\CoreTests.cs'
 $guiTest = Join-Path $root 'tests\GuiSmokeTests.cs'
 $ftpTest = Join-Path $root 'tests\FtpTests.cs'
@@ -28,7 +29,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Core tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'FTP test compilation failed.' }
 & $ftpExe $previousSample (Join-Path $testRoot 'ftp results')
 if ($LASTEXITCODE -ne 0) { throw 'FTP tests failed.' }
-& $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:GuiSmokeTests "/win32icon:$icon" "/out:$guiExe" $core $ftp $form $ftpTest $guiTest
+& $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:GuiSmokeTests "/win32icon:$icon" "/out:$guiExe" $core $ftp $form $ui $ftpTest $guiTest
 if ($LASTEXITCODE -ne 0) { throw 'GUI test compilation failed.' }
 & $guiExe (Join-Path $testRoot 'gui results')
 if ($LASTEXITCODE -ne 0) { throw 'GUI smoke test failed.' }
@@ -38,3 +39,4 @@ if ($LASTEXITCODE -ne 0) { throw 'Release GUI test compilation failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Release GUI test failed.' }
 Write-Host "Test evidence: $testRoot"
 Write-Host 'Run the independent Python verifier separately as described in README.md.'
+

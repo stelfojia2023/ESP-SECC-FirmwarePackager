@@ -68,7 +68,7 @@ namespace SeccFirmwarePackager
         {
             if (location == null || location.DirectoryUri == null) throw new InvalidDataException("FTP 地址未设置。");
             if (String.IsNullOrWhiteSpace(fileName) || fileName != Path.GetFileName(fileName))
-                throw new InvalidDataException("联合包文件名无效。");
+                throw new InvalidDataException("上传文件名无效。");
             string prefix = location.DirectoryUri.AbsoluteUri;
             if (!prefix.EndsWith("/", StringComparison.Ordinal)) prefix += "/";
             return new Uri(prefix + Uri.EscapeDataString(fileName), UriKind.Absolute);
@@ -110,9 +110,46 @@ namespace SeccFirmwarePackager
             }
             Packager.VerifyBytes(bytes);
             Uri target = FileUri(location, Path.GetFileName(packagePath));
+            using (MemoryStream input = new MemoryStream(bytes, false))
+                return UploadStream(input, bytes.Length, target, username, password);
+        }
+
+        // Ordinary files are streamed as-is. This is deliberately separate from Upload,
+        // whose package format verification and candidate 6 MiB limit remain mandatory.
+        public static FtpUploadResult UploadFile(string path, string address, string username, string password)
+        {
+            FtpLocation location = ParseAddress(address);
+            if (location.HasCredentials)
+            {
+                username = location.Username;
+                password = location.Password;
+            }
+            ValidateCredentials(username, password);
+            if (String.IsNullOrWhiteSpace(path)) throw new InvalidDataException("请选择要上传的文件。");
             try
             {
-                FtpWebRequest request = (FtpWebRequest)WebRequest.Create(target);
+                using (FileStream input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    Uri target = FileUri(location, Path.GetFileName(path));
+                    return UploadStream(input, input.Length, target, username, password);
+                }
+            }
+            catch (InvalidDataException) { throw; }
+            catch (Exception e)
+            {
+                if (e is IOException || e is UnauthorizedAccessException || e is ArgumentException || e is NotSupportedException)
+                    throw new InvalidDataException("上传文件不可读取，请检查文件路径及访问权限。");
+                throw;
+            }
+        }
+
+        private static FtpUploadResult UploadStream(Stream input, long length, Uri target, string username, string password)
+        {
+            FtpWebRequest request = null;
+            bool completed = false;
+            try
+            {
+                request = (FtpWebRequest)WebRequest.Create(target);
                 request.Method = WebRequestMethods.Ftp.UploadFile;
                 request.Credentials = new NetworkCredential(username, password ?? "");
                 request.UseBinary = true;
@@ -121,14 +158,27 @@ namespace SeccFirmwarePackager
                 request.Proxy = null;
                 request.Timeout = 60000;
                 request.ReadWriteTimeout = 60000;
-                request.ContentLength = bytes.Length;
-                using (Stream stream = request.GetRequestStream()) stream.Write(bytes, 0, bytes.Length);
+                request.ContentLength = length;
+                long sent = 0;
+                byte[] buffer = new byte[64 * 1024];
+                using (Stream stream = request.GetRequestStream())
+                {
+                    while (sent < length)
+                    {
+                        int read = input.Read(buffer, 0, (int)Math.Min(buffer.Length, length - sent));
+                        if (read <= 0) throw new InvalidDataException("读取上传文件不完整，传输已中止。");
+                        stream.Write(buffer, 0, read);
+                        sent += read;
+                    }
+                    if (input.ReadByte() != -1) throw new InvalidDataException("读取期间文件大小发生变化，传输已中止。");
+                }
                 using (FtpWebResponse response = (FtpWebResponse)request.GetResponse())
                 {
                     int code = (int)response.StatusCode;
                     if (code != 226 && code != 250)
                         throw new InvalidDataException("FTP 服务器未确认传输完成（状态 " + code + "）。");
-                    return new FtpUploadResult { RemoteUrl = target.AbsoluteUri, StatusCode = code, Bytes = bytes.Length };
+                    completed = true;
+                    return new FtpUploadResult { RemoteUrl = target.AbsoluteUri, StatusCode = code, Bytes = sent };
                 }
             }
             catch (WebException e)
@@ -144,6 +194,16 @@ namespace SeccFirmwarePackager
                 if (e.Status == WebExceptionStatus.ConnectFailure) throw new InvalidDataException("无法连接 FTP 服务器。");
                 throw new InvalidDataException("FTP 连接或上传失败，请检查网络、目录及服务器状态。");
             }
+            catch (InvalidDataException) { throw; }
+            catch (IOException)
+            {
+                throw new InvalidDataException("读取文件或传输数据失败，请检查文件及网络状态。");
+            }
+            finally
+            {
+                if (!completed && request != null) try { request.Abort(); } catch (Exception) { }
+            }
         }
     }
 }
+
