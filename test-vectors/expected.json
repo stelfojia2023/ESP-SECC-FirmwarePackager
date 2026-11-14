@@ -1,0 +1,31 @@
+{
+  "format": "SECCPKG1 V1 draft",
+  "bundle_file": "bundle-m4-esp32-v1.bin",
+  "total_bytes": 20480,
+  "total_hex": "0x5000",
+  "whole_md5_field_zeroed": "ef5cd8f46bc048a8a202867259a0ae29",
+  "ordinary_final_file_md5": "a93fb91832c2b79ac2ad9cfddb0e402c",
+  "bundle_sha256": "c1899b4b0b4cdb4cd9297c2b8262922a46ba911918c0692c8e0696c2b9796200",
+  "entries": [
+    {
+      "kind": 3,
+      "offset": 4096,
+      "size": 8193,
+      "name": "M4 固件 名称.bin",
+      "version": "V000B01D15",
+      "md5": "57b3272a8046ef29be3b4e4303746fef",
+      "type": "M4",
+      "input_sha256": "b0de4f64d95979cdd012c0ab751a26d5e23999a6c09a53a38b84279d765bd863"
+    },
+    {
+      "kind": 5,
+      "offset": 16384,
+      "size": 4095,
+      "name": "ESP32 固件 名称.bin",
+      "version": "V000B01D15",
+      "md5": "2c37b8f8cbb48c2d783474068bfe353c",
+      "type": "ESP32",
+      "input_sha256": "b623824f67e3c23fa22c5f281e210f609efd98e558499c9eaaacb95796bfd379"
+    }
+  ]
+}

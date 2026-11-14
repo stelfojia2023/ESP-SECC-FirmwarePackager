@@ -1,0 +1,9 @@
+PASS 31 nonempty combinations, alignment, extraction and hashes
+PASS 5,628 KiB budget vector and all five expected offsets
+PASS corruption, structural rejection, firmware/whole MD5, padding and truncation
+PASS invalid input, limits, budget warning, safe output and UTF-8 limits
+PASS assertions=260531
+PASS visible WinForms UI: preview, generate, display, verify and advisory budget warning
+PASS delivered EXE: browse, default name, missing-version error, save, generate, open, verify and corrupted-file error
+Test evidence: C:\Users\zhangyy\AppData\Local\Temp\secc-packager-tests-0f307a3209854d30b9a357e7f7f02a68
+Run the independent Python verifier separately as described in README.md.
