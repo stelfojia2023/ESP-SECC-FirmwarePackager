@@ -4,7 +4,7 @@
 
 [下载 V0.0.4 EXE](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/releases/download/v0.0.4/FirmwarePackager.exe) · [下载测试 BIN](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/raw/refs/heads/main/test-vectors/five-test-bins.zip) · [文档目录](docs/README.md)
 
-支持 Windows 10/11 64 位，依赖系统的 .NET Framework 4.x。仓库为私有仓库，下载时需要登录有权限的 GitHub 账号。
+支持 Windows 10/11 64 位，依赖系统的 .NET Framework 4.x。
 
 ## 使用
 
