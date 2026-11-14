@@ -137,6 +137,12 @@ internal static class UiContractTests
                 Assert(resultBox.Text.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Length <= 10, "five-file report within ten lines");
                 using (Bitmap image = new Bitmap(form.Width, form.Height))
                 { form.DrawToBitmap(image, new Rectangle(Point.Empty, form.Size)); image.Save(Path.Combine(work, "five-files-render.png")); }
+                Control fullContent = resultCard.Parent;
+                using (Bitmap image = new Bitmap(fullContent.Width, fullContent.Height))
+                {
+                    fullContent.DrawToBitmap(image, new Rectangle(Point.Empty, fullContent.Size));
+                    image.Save(Path.Combine(work, "five-files-full-content.png"));
+                }
                 using (Font enlarged = new Font(grid.Font.FontFamily, grid.Font.Size * 1.25F, grid.Font.Style))
                 {
                     Font original = grid.Font; grid.Font = enlarged; Application.DoEvents();
