@@ -43,6 +43,10 @@ jobs:
           if ($LASTEXITCODE) { throw 'UI contract compile failed' }
           & ./UiContractTests.exe dist/FirmwarePackager.exe evidence/ci 2>&1 | Tee-Object evidence/ci/ui-contract.log
           if ($LASTEXITCODE) { throw 'UI contract tests failed' }
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:AppearanceTests.exe (Join-Path $PWD 'tests\AppearanceTests.cs')
+          if ($LASTEXITCODE) { throw 'Appearance test compile failed' }
+          & ./AppearanceTests.exe dist/FirmwarePackager.exe evidence/ci/appearance 2>&1 | Tee-Object evidence/ci/appearance.log
+          if ($LASTEXITCODE) { throw 'Appearance tests failed' }
           python tests/independent_verify.py "$env:RUNNER_TEMP/core-results"
           if ($LASTEXITCODE) { throw 'Independent verifier failed' }
           python tests/verify_vector.py test-vectors
@@ -66,7 +70,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: FirmwarePackager-V0.0.3-windows
+          name: FirmwarePackager-V0.0.4-windows
           path: |
             dist/FirmwarePackager.exe
             evidence/ci/

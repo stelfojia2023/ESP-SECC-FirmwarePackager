@@ -4,6 +4,7 @@ $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (!(Test-Path -LiteralPath $csc)) { throw 'The 64-bit .NET Framework C# compiler was not found.' }
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('secc-packager-tests-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $testRoot | Out-Null
+$env:SECC_PACKAGER_SETTINGS_DIR = Join-Path $testRoot 'appearance-isolation'
 $core = Join-Path $root 'src\Packager.cs'
 $ftp = Join-Path $root 'src\FtpUploader.cs'
 $form = Join-Path $root 'src\MainForm.cs'
@@ -59,6 +60,11 @@ $standaloneExe = Join-Path $standalone 'FirmwarePackager.exe'
 Copy-Item -LiteralPath $releaseExe -Destination $standaloneExe
 & $releaseFtpTestExe $standaloneExe
 if ($LASTEXITCODE -ne 0) { throw 'Standalone FTP directory test failed.' }
+$appearanceExe = Join-Path $testRoot 'AppearanceTests.exe'
+& $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$appearanceExe" (Join-Path $root 'tests\AppearanceTests.cs')
+if ($LASTEXITCODE -ne 0) { throw 'Appearance test compilation failed.' }
+& $appearanceExe $releaseExe (Join-Path $testRoot 'appearance results')
+if ($LASTEXITCODE -ne 0) { throw 'Appearance tests failed.' }
 Write-Host "Test evidence: $testRoot"
 Write-Host 'Run the independent Python verifier separately as described in README.md.'
 

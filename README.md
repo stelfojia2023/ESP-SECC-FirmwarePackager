@@ -1,19 +1,21 @@
 > FTP 支持上传文件并查看目标目录；启动时地址、用户名和密码均为空，由用户填写。
 > 新增“设备升级”页面，打包成功后自动关联联合包，也可选择其他 BIN。本地网口和运营平台升级接口尚未接入，“开始升级”暂不可用。
-> **工具版本 V0.0.3**：银白浅灰微光泽卡片、分组操作、动态文件列表、内嵌 FTP 操作区与默认启用音效。[当前视觉规范与设计 tokens](docs/视觉规范.md)，[早期界面记录](docs/UI-V0.0.1.md)。工具版本与包格式 V1 独立。
-> 当前工程版本为 V0.0.3，独立 EXE 可从 GitHub Release 下载。[本次变更](docs/V0.0.3变更.md) · [发布验证](docs/V0.0.3发布验证.md) · [版本提交约定](docs/版本约定.md)。
+> **工具版本 V0.0.4**：顶部色圈可直接切换银、蓝、紫、粉、橙、黄、绿七种配色；首次使用银色，并记住上次选择。[七色配色规范](docs/七色配色规范.md) · [视觉规范](docs/视觉规范.md)。工具版本与包格式 V1 独立。
+> 当前工程版本为 V0.0.4，独立 EXE 可从 GitHub Release 下载。[七色验证](docs/V0.0.4七色验证.md) · [版本提交约定](docs/版本约定.md)。
 
-# ESP-SECC 固件联合打包工具 V0.0.3
+# ESP-SECC 固件联合打包工具 V0.0.4
 
 本工具将 PFC、LLC、M4、PLC、ESP32 中选定的 1～5 份固件打包成一个 BIN，生成时自动校验，可查看本次生成包的包头，也可按需上传到 FTP。交付的 `dist/FirmwarePackager.exe` 是 Windows 10/11 64 位图形程序，不需要安装开发环境。运行依赖 Windows 自带的 .NET Framework 4.x；打包无需联网，FTP 上传需要网络和服务器。
 
-[下载 V0.0.3 Release EXE](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/releases/download/v0.0.3/FirmwarePackager.exe) · [下载五类测试 BIN](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/raw/refs/heads/main/test-vectors/five-test-bins.zip)。仓库为私有仓库，需要登录有权限的 GitHub 账号。
+[下载 V0.0.4 Release EXE](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/releases/download/v0.0.4/FirmwarePackager.exe) · [下载五类测试 BIN](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/raw/refs/heads/main/test-vectors/five-test-bins.zip)。仓库为私有仓库，需要登录有权限的 GitHub 账号。
 
 **V1 是候选包格式。当前设备尚未接入联合包解析和多模块升级；候选的 6 MiB 暂存区和 2.5 MiB ESP32 应用槽不是当前设备配置。** 上传仅发送文件到用户指定的 FTP 目录，不烧录设备、不执行升级。
 
 **支持选择文件夹后一键加载，以及一键清理五类固件选择。只扫描所选文件夹当前层，不递归子目录；清理不会删除磁盘文件，也不会清空 FTP 配置或输出位置。**
 
 操作结果按本机时间追加记录，在当前程序窗口运行期间保留；切换页面和清理输入不会清除记录。关闭程序后不保存历史，下次启动重新记录。
+
+点击顶部右侧色圈可立即切换界面配色；悬停显示颜色名称，选中项带外环。配色单独保存在本机，重新启动后恢复；切换不清除当前输入或操作记录。
 
 ## 使用方法
 

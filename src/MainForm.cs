@@ -11,22 +11,124 @@ using System.Windows.Forms;
 
 namespace SeccFirmwarePackager
 {
+    internal sealed class UiPalette
+    {
+        public readonly string Key, Label;
+        public readonly Color Canvas, Card, CardTop, CardBottom, Field, Blue, SoftBlue, Border, ButtonPrimary, ButtonSecondary, ButtonIcon, Swatch;
+
+        private UiPalette(string key, string label, params string[] values)
+        {
+            Key = key; Label = label;
+            Canvas = ColorTranslator.FromHtml(values[0]); Card = ColorTranslator.FromHtml(values[1]);
+            CardTop = ColorTranslator.FromHtml(values[2]); CardBottom = ColorTranslator.FromHtml(values[3]);
+            Field = ColorTranslator.FromHtml(values[4]); Blue = ColorTranslator.FromHtml(values[5]);
+            SoftBlue = ColorTranslator.FromHtml(values[6]); Border = ColorTranslator.FromHtml(values[7]);
+            ButtonPrimary = ColorTranslator.FromHtml(values[8]); ButtonSecondary = ColorTranslator.FromHtml(values[9]);
+            ButtonIcon = ColorTranslator.FromHtml(values[10]);
+            Swatch = ColorTranslator.FromHtml(values[11]);
+        }
+
+        public static readonly UiPalette[] All = {
+            new UiPalette("silver", "银色", "#EEEFF1", "#F7F8FA", "#FFFFFF", "#ECEEF1", "#F0F1F3", "#506575", "#E3E9E8", "#B9BEC5", "#DEE6E2", "#E7E9ED", "#F5F6F8", "#C9CED2"),
+            new UiPalette("blue", "蓝色", "#E6EDF7", "#F4F8FD", "#FBFDFF", "#E3EBF6", "#ECF2FA", "#426080", "#D7E5F5", "#AABED4", "#C8DAEE", "#DCE8F5", "#F1F6FC", "#B4CEE9"),
+            new UiPalette("purple", "紫色", "#EDE9F6", "#F8F6FC", "#FDFBFF", "#EEE9F8", "#F2EEF9", "#6B5A80", "#E4DBF2", "#C0B5D2", "#DDD2EE", "#E9E2F3", "#F6F3FB", "#C5B9E4"),
+            new UiPalette("pink", "粉色", "#F7E9ED", "#FCF7F8", "#FFFCFD", "#F6E8EC", "#F9F0F2", "#875B68", "#F1DCE3", "#D2B5BE", "#EECED9", "#F4E1E7", "#FBF4F6", "#EAC0CF"),
+            new UiPalette("orange", "橙色", "#F8EBE2", "#FEF8F4", "#FFFCFA", "#F7E9E0", "#FAF1EA", "#886048", "#F3E1D3", "#D4B9A6", "#EECFB9", "#F4E2D6", "#FCF5F0", "#F2C6AA"),
+            new UiPalette("yellow", "黄色", "#F7F1DF", "#FCFAF1", "#FFFDF7", "#F4ECD4", "#FAF6E9", "#796743", "#F1E8CC", "#D1C6A7", "#E9DDB3", "#F3EBD4", "#FBF9EF", "#ECDC9B"),
+            new UiPalette("green", "绿色", "#E7F1E9", "#F5FAF6", "#FCFFFC", "#E4EFE6", "#EFF6F0", "#496B54", "#D8EADD", "#AEC6B4", "#C9E2CF", "#DEEEE1", "#F3F9F4", "#B6D8BF")
+        };
+
+        public static UiPalette Find(string key)
+        {
+            foreach (UiPalette palette in All)
+                if (String.Equals(palette.Key, key, StringComparison.Ordinal)) return palette;
+            return All[0];
+        }
+
+        public Color Translate(Color color, UiPalette target)
+        {
+            if (color.IsEmpty) return color;
+            int value = color.ToArgb();
+            if (value == Canvas.ToArgb()) return target.Canvas;
+            if (value == Card.ToArgb()) return target.Card;
+            if (value == Field.ToArgb()) return target.Field;
+            if (value == Blue.ToArgb()) return target.Blue;
+            if (value == SoftBlue.ToArgb()) return target.SoftBlue;
+            if (value == Border.ToArgb()) return target.Border;
+            if (value == ButtonPrimary.ToArgb()) return target.ButtonPrimary;
+            if (value == ButtonSecondary.ToArgb()) return target.ButtonSecondary;
+            if (value == ButtonIcon.ToArgb()) return target.ButtonIcon;
+            return color;
+        }
+    }
+
+    internal static class AppearanceSettings
+    {
+        private static string DirectoryPath()
+        {
+            string isolated = Environment.GetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR");
+            if (!String.IsNullOrWhiteSpace(isolated)) return isolated;
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LINCHR", "FirmwarePackager");
+        }
+
+        public static UiPalette Load()
+        {
+            try
+            {
+                string path = Path.Combine(DirectoryPath(), "appearance.txt");
+                FileInfo file = new FileInfo(path);
+                if (!file.Exists || file.Length > 128) return UiPalette.All[0];
+                return UiPalette.Find(File.ReadAllText(path, Encoding.UTF8).Trim());
+            }
+            catch (Exception ex)
+            {
+                if (!(ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException || ex is NotSupportedException || ex is System.Security.SecurityException))
+                    throw;
+                return UiPalette.All[0];
+            }
+        }
+
+        public static bool Save(UiPalette palette)
+        {
+            string temp = null;
+            try
+            {
+                string directory = DirectoryPath(); Directory.CreateDirectory(directory);
+                string path = Path.Combine(directory, "appearance.txt");
+                temp = Path.Combine(directory, ".appearance-" + Guid.NewGuid().ToString("N") + ".tmp");
+                File.WriteAllText(temp, palette.Key, new UTF8Encoding(false));
+                if (File.Exists(path)) File.Replace(temp, path, null); else File.Move(temp, path);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (!(ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException || ex is NotSupportedException || ex is System.Security.SecurityException))
+                    throw;
+                return false;
+            }
+            finally
+            {
+                try { if (temp != null && File.Exists(temp)) File.Delete(temp); } catch (IOException) { } catch (UnauthorizedAccessException) { } catch (System.Security.SecurityException) { }
+            }
+        }
+    }
+
     internal static class UiColors
     {
-        // Authoritative appearance tokens. See docs/视觉规范.md.
-        public static readonly Color Canvas = ColorTranslator.FromHtml("#EEEFF1");
-        public static readonly Color Card = ColorTranslator.FromHtml("#F7F8FA");
-        public static readonly Color CardTop = ColorTranslator.FromHtml("#FFFFFF");
-        public static readonly Color CardBottom = ColorTranslator.FromHtml("#ECEEF1");
-        public static readonly Color Field = ColorTranslator.FromHtml("#F0F1F3");
+        // Current appearance tokens; the seven palettes are specified in docs/七色配色规范.md.
+        public static Color Canvas = ColorTranslator.FromHtml("#EEEFF1");
+        public static Color Card = ColorTranslator.FromHtml("#F7F8FA");
+        public static Color CardTop = ColorTranslator.FromHtml("#FFFFFF");
+        public static Color CardBottom = ColorTranslator.FromHtml("#ECEEF1");
+        public static Color Field = ColorTranslator.FromHtml("#F0F1F3");
         public static readonly Color Ink = ColorTranslator.FromHtml("#30363C");
         public static readonly Color Muted = ColorTranslator.FromHtml("#626A73");
-        public static readonly Color Blue = ColorTranslator.FromHtml("#506575");
-        public static readonly Color SoftBlue = ColorTranslator.FromHtml("#E3E9E8");
-        public static readonly Color Border = ColorTranslator.FromHtml("#B9BEC5");
-        public static readonly Color ButtonPrimary = ColorTranslator.FromHtml("#DEE6E2");
-        public static readonly Color ButtonSecondary = ColorTranslator.FromHtml("#E7E9ED");
-        public static readonly Color ButtonIcon = ColorTranslator.FromHtml("#F5F6F8");
+        public static Color Blue = ColorTranslator.FromHtml("#506575");
+        public static Color SoftBlue = ColorTranslator.FromHtml("#E3E9E8");
+        public static Color Border = ColorTranslator.FromHtml("#B9BEC5");
+        public static Color ButtonPrimary = ColorTranslator.FromHtml("#DEE6E2");
+        public static Color ButtonSecondary = ColorTranslator.FromHtml("#E7E9ED");
+        public static Color ButtonIcon = ColorTranslator.FromHtml("#F5F6F8");
         public static readonly Color ButtonDisabledTint = Color.FromArgb(235, 236, 238);
         public static readonly Color ButtonShadeTint = Color.FromArgb(100, 107, 114);
         public static readonly Color ButtonShadow = Color.FromArgb(61, 67, 74);
@@ -37,6 +139,63 @@ namespace SeccFirmwarePackager
         public static readonly Color Error = ColorTranslator.FromHtml("#B53239");
         public static readonly Color HeaderHighlight = ColorTranslator.FromHtml("#E1D59C");
         public static readonly Color Success = ColorTranslator.FromHtml("#1D7858");
+
+        public static UiPalette Current = UiPalette.All[0];
+        public static void Apply(UiPalette palette)
+        {
+            Current = palette;
+            Canvas = palette.Canvas; Card = palette.Card; CardTop = palette.CardTop; CardBottom = palette.CardBottom;
+            Field = palette.Field; Blue = palette.Blue; SoftBlue = palette.SoftBlue; Border = palette.Border;
+            ButtonPrimary = palette.ButtonPrimary; ButtonSecondary = palette.ButtonSecondary; ButtonIcon = palette.ButtonIcon;
+        }
+    }
+
+    internal sealed class AppearanceSwatch : Button
+    {
+        public readonly UiPalette Palette;
+
+        public AppearanceSwatch(UiPalette palette)
+        {
+            Palette = palette; Name = "Appearance_" + palette.Key; Text = palette.Label;
+            AccessibleName = palette.Label + "配色"; AccessibleRole = AccessibleRole.RadioButton;
+            Size = new Size(30, 32); Margin = new Padding(1, 0, 1, 0);
+            BackColor = UiColors.Canvas; UseVisualStyleBackColor = false;
+            FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        }
+
+        protected override AccessibleObject CreateAccessibilityInstance()
+        {
+            return new AppearanceSwatchAccessibleObject(this);
+        }
+
+        private sealed class AppearanceSwatchAccessibleObject : ControlAccessibleObject
+        {
+            private readonly AppearanceSwatch swatch;
+            public AppearanceSwatchAccessibleObject(AppearanceSwatch owner) : base(owner) { swatch = owner; }
+            public override AccessibleStates State
+            {
+                get
+                {
+                    AccessibleStates state = base.State;
+                    return Object.ReferenceEquals(UiColors.Current, swatch.Palette) ? state | AccessibleStates.Checked : state;
+                }
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.Clear(BackColor);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            float x = (ClientSize.Width - 18F) / 2F, y = (ClientSize.Height - 18F) / 2F;
+            using (Brush fill = new SolidBrush(Palette.Swatch)) e.Graphics.FillEllipse(fill, x, y, 18, 18);
+            using (Pen outline = new Pen(Color.FromArgb(110, 91, 100, 109), 1F)) e.Graphics.DrawEllipse(outline, x, y, 18, 18);
+            if (Object.ReferenceEquals(UiColors.Current, Palette))
+                using (Pen selected = new Pen(UiColors.Ink, 1.6F)) e.Graphics.DrawEllipse(selected, x - 3, y - 3, 24, 24);
+            if (Focused && ShowFocusCues)
+                ControlPaint.DrawFocusRectangle(e.Graphics, new Rectangle(0, 1, Width - 1, Height - 2), UiColors.Ink, BackColor);
+        }
     }
 
     // Drawing units are device pixels; layout dimensions remain WinForms logical units.
@@ -234,7 +393,8 @@ namespace SeccFirmwarePackager
         private readonly Panel upgradeScroll = new Panel();
         private readonly Button packageTab = new RaisedButton();
         private readonly Button upgradeTab = new RaisedButton();
-        private readonly UpgradePage upgradePage = new UpgradePage();
+        private readonly UpgradePage upgradePage;
+        private readonly FlowLayoutPanel appearanceSwatches = new FlowLayoutPanel();
         private readonly Font pageTabFont = new Font("Microsoft YaHei UI", 10.5F, FontStyle.Regular);
         private readonly Font pageTabSelectedFont = new Font("Microsoft YaHei UI", 10.5F, FontStyle.Bold);
         private Button ftpBrowseFile;
@@ -259,7 +419,9 @@ namespace SeccFirmwarePackager
 
         public MainForm()
         {
-            Text = "打包工具 · V0.0.3"; Name = "MainForm";
+            UiColors.Apply(AppearanceSettings.Load());
+            upgradePage = new UpgradePage();
+            Text = "打包工具 · V0.0.4"; Name = "MainForm";
             MinimumSize = new Size(1100, 720);
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
             Size = new Size(Math.Max(1100, Math.Min(1320, work.Width - 24)), Math.Max(720, Math.Min(792, work.Height - 24)));
@@ -276,12 +438,23 @@ namespace SeccFirmwarePackager
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             Controls.Add(root);
             FlowLayoutPanel navigation = new FlowLayoutPanel { Name = "PageNavigation", Dock = DockStyle.Fill, WrapContents = false,
-                Margin = Padding.Empty, Padding = new Padding(18, 0, 18, 0), BackColor = UiColors.Canvas };
+                Margin = Padding.Empty, Padding = new Padding(18, 0, 0, 0), BackColor = UiColors.Canvas };
             PreparePageTab(packageTab, "PackPageTab", "固件打包");
             PreparePageTab(upgradeTab, "UpgradePageTab", "设备升级");
             packageTab.Click += delegate { ShowUpgradePage(false); };
             upgradeTab.Click += delegate { ShowUpgradePage(true); };
-            navigation.Controls.Add(packageTab); navigation.Controls.Add(upgradeTab); navigation.Controls.Add(help); root.Controls.Add(navigation, 0, 0);
+            navigation.Controls.Add(packageTab); navigation.Controls.Add(upgradeTab); navigation.Controls.Add(help);
+            TableLayoutPanel top = new TableLayoutPanel { Name = "HeaderBar", Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
+                Margin = Padding.Empty, BackColor = UiColors.Canvas };
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 242));
+            top.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            appearanceSwatches.Name = "AppearanceSwatches"; appearanceSwatches.Dock = DockStyle.Fill;
+            appearanceSwatches.WrapContents = false; appearanceSwatches.Margin = Padding.Empty;
+            appearanceSwatches.Padding = new Padding(0, 6, 18, 0); appearanceSwatches.BackColor = UiColors.Canvas;
+            SetupAppearanceSwatches();
+            top.Controls.Add(navigation, 0, 0); top.Controls.Add(appearanceSwatches, 1, 0);
+            root.Controls.Add(top, 0, 0);
             Panel pageHost = new Panel { Name = "PageHost", Dock = DockStyle.Fill, Margin = Padding.Empty, BackColor = UiColors.Canvas };
             packageScroll.Name = "ContentScroll"; packageScroll.Dock = DockStyle.Fill; packageScroll.AutoScroll = true;
             upgradeScroll.Name = "UpgradeScroll"; upgradeScroll.Dock = DockStyle.Fill; upgradeScroll.AutoScroll = true;
@@ -397,6 +570,63 @@ namespace SeccFirmwarePackager
             resultBody.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill, Padding = new Padding(9, 5, 9, 5) }, 0, 1); result.Controls.Add(resultBody);
             workspace.Controls.Add(result, 0, 2); workspace.SetColumnSpan(result, 2);
             RefreshPreview();
+        }
+
+        private void SetupAppearanceSwatches()
+        {
+            foreach (UiPalette palette in UiPalette.All)
+            {
+                AppearanceSwatch swatch = new AppearanceSwatch(palette);
+                swatch.Click += delegate(object sender, EventArgs e)
+                {
+                    SelectAppearance(((AppearanceSwatch)sender).Palette);
+                };
+                tooltips.SetToolTip(swatch, palette.Label + "配色");
+                appearanceSwatches.Controls.Add(swatch);
+            }
+        }
+
+        private static void RecolorControl(Control control, UiPalette oldPalette, UiPalette newPalette)
+        {
+            // Descendants are read first, before an inherited parent color changes.
+            foreach (Control child in control.Controls) RecolorControl(child, oldPalette, newPalette);
+            DataGridView view = control as DataGridView;
+            if (view != null)
+            {
+                view.BackgroundColor = oldPalette.Translate(view.BackgroundColor, newPalette);
+                view.GridColor = oldPalette.Translate(view.GridColor, newPalette);
+                view.DefaultCellStyle.BackColor = oldPalette.Translate(view.DefaultCellStyle.BackColor, newPalette);
+                view.DefaultCellStyle.SelectionBackColor = oldPalette.Translate(view.DefaultCellStyle.SelectionBackColor, newPalette);
+                foreach (DataGridViewColumn column in view.Columns)
+                {
+                    column.DefaultCellStyle.BackColor = oldPalette.Translate(column.DefaultCellStyle.BackColor, newPalette);
+                    column.DefaultCellStyle.SelectionBackColor = oldPalette.Translate(column.DefaultCellStyle.SelectionBackColor, newPalette);
+                }
+            }
+            Color background = oldPalette.Translate(control.BackColor, newPalette);
+            if (background.ToArgb() != control.BackColor.ToArgb()) control.BackColor = background;
+            // RichTextBox retains the existing per-entry colors and selection.
+            if (!(control is RichTextBox))
+            {
+                Color foreground = oldPalette.Translate(control.ForeColor, newPalette);
+                if (foreground.ToArgb() != control.ForeColor.ToArgb()) control.ForeColor = foreground;
+            }
+            control.Invalidate();
+        }
+
+        private void SelectAppearance(UiPalette palette)
+        {
+            UiPalette previous = UiColors.Current;
+            if (Object.ReferenceEquals(previous, palette)) return;
+            UiColors.Apply(palette);
+            RecolorControl(this, previous, palette);
+            ftpStatus.ForeColor = previous.Translate(ftpStatus.ForeColor, palette);
+            if (!AppearanceSettings.Save(palette))
+            {
+                string warning = "当前配色已应用，但无法保存；下次打开时可能无法恢复。";
+                ShowInputResult(warning, true);
+                MessageBox.Show(this, warning, "配色未保存", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         private void PreparePageTab(Button button, string name, string text)
@@ -619,6 +849,7 @@ namespace SeccFirmwarePackager
                 help.Size = new Size(650, 520); help.MinimumSize = new Size(480, 360); help.BackColor = UiColors.Canvas;
                 TextBox text = new TextBox { Name = "HelpText", Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = UiColors.Canvas, Font = Font };
                 text.Text = "文件与版本\r\n名称为文件名去掉 .bin；版本取下划线后的 V/v 至下一个下划线或点，保留大小写。名称/版本可修改，最多 96/64 个 UTF-8 字节。手动选入缺版本文件后须补填才能生成。\r\n\r\n一键加载\r\n仅扫描当前文件夹；按开头 PFC、LLC、M4、PLC、ESP32 识别 .bin，大小写不敏感。同类唯一且有效才更新；多文件、缺版本或无效项保留原选择并提示。一键清理不删除磁盘文件，不清 FTP 配置和输出位置。\r\n\r\n大小限制\r\n文件不可为空。PFC/LLC：256,000 字节（250 KiB）；M4：524,288 字节（512 KiB）；PLC：2,097,152 字节（2 MiB）；ESP32：2,621,440 字节（2.5 MiB）。整包最多 6,291,456 字节（6 MiB），含包头和对齐。加载和生成都会检查。\r\n\r\nFTP\r\n生成后默认上传该联合包，也可独立选任意本地文件。联合包上传前校验；普通文件不做包格式校验。打开 FTP 目录可查看服务器返回条目，同名仅比较名称。普通 FTP 明文传输，服务器同名文件可能覆盖。\r\n\r\n查看包头\r\n生成成功后可查看本次包最前 4096 字节；只读，不改变文件，也不读取后续固件内容。地址范围 0x0000～0x0FFF。\r\n\r\n设备升级\r\n生成的联合包会自动关联至升级页面，也可拖入或选择其他 BIN。本地网口协议与远程运营平台接口尚未接入，当前不能执行升级。";
+                text.Text += "\r\n\r\n界面配色\r\n点击顶部右侧色圈即可切换界面配色，选中项带外环；首次为银色，之后恢复上次选择。";
                 help.Padding = new Padding(20); help.Controls.Add(text);
                 help.Shown += delegate { text.Select(0, 0); };
                 help.ShowDialog(this);

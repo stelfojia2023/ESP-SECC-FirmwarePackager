@@ -93,6 +93,30 @@ internal static class ReleaseUiTests
             throw new Exception("Could not click a control.");
     }
 
+    private static void ClickSwatch(IntPtr root, string label, string key, string settings)
+    {
+        Node swatch = Button(root, label, 0);
+        if (!IsWindowVisible(swatch.Handle)) throw new Exception("Appearance swatch is not visible: " + label);
+        PointNative old;
+        if (!GetCursorPos(out old) || !SetForegroundWindow(root)) throw new Exception("Could not focus swatch test.");
+        int x = (swatch.Bounds.Left + swatch.Bounds.Right) / 2, y = (swatch.Bounds.Top + swatch.Bounds.Bottom) / 2;
+        try
+        {
+            if (!SetCursorPos(x, y)) throw new Exception("Could not move to appearance swatch.");
+            Thread.Sleep(100);
+            mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+            Thread.Sleep(70);
+            mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+            string path = Path.Combine(settings, "appearance.txt");
+            WaitUntil(delegate
+            {
+                try { return File.Exists(path) && File.ReadAllText(path) == key; }
+                catch (IOException) { return false; }
+            }, "Native swatch click did not persist " + key);
+        }
+        finally { mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero); SetCursorPos(old.X, old.Y); }
+    }
+
     private static void SetText(IntPtr handle, string value)
     {
         if (SendText(handle, WM_SETTEXT, IntPtr.Zero, value) == IntPtr.Zero)
@@ -333,9 +357,14 @@ internal static class ReleaseUiTests
             WaitUntil(delegate { process.Refresh(); return process.MainWindowHandle != IntPtr.Zero; }, "Release GUI window did not appear.");
             Thread.Sleep(1000);
             process.Refresh();
-            if (!process.MainWindowTitle.Contains("V0.0.3")) throw new Exception("Release window version is incorrect.");
+            if (!process.MainWindowTitle.Contains("V0.0.4")) throw new Exception("Release window version is incorrect.");
             IntPtr root = process.MainWindowHandle;
             uint id = (uint)process.Id;
+            string settings = Environment.GetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR");
+            if (String.IsNullOrWhiteSpace(settings)) throw new Exception("Test settings directory is not isolated.");
+            string[] colorLabels = { "蓝色", "紫色", "粉色", "橙色", "黄色", "绿色", "银色" };
+            string[] colorKeys = { "blue", "purple", "pink", "orange", "yellow", "green", "silver" };
+            for (int n = 0; n < colorKeys.Length; n++) ClickSwatch(root, colorLabels[n], colorKeys[n], settings);
             Node inlineUpload = Button(root, "上传到 FTP", 0);
             if (!IsWindowVisible(inlineUpload.Handle)) throw new Exception("FTP upload must be visible inline on startup.");
             foreach (Node child in Children(root))
@@ -434,7 +463,7 @@ internal static class ReleaseUiTests
             if (ResultHistory(process.MainWindowHandle).Text != "") throw new Exception("Operation history persisted after the application closed.");
             process.CloseMainWindow();
             if (!process.WaitForExit(10000) || process.ExitCode != 0) throw new Exception("Reopened release did not close cleanly.");
-            Console.WriteLine("PASS delivered EXE: help, native drag, generate, header, upgrade page, timestamped history retained until restart; core rejects corruption" + (args.Length == 3 ? " and validates prior sample" : ""));
+            Console.WriteLine("PASS delivered EXE: seven native swatch clicks, help, native drag, generate, header, upgrade page, timestamped history retained until restart; core rejects corruption" + (args.Length == 3 ? " and validates prior sample" : ""));
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL release UI " + ex); return 1; }
