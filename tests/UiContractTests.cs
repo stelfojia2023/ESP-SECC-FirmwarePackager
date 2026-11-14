@@ -231,7 +231,7 @@ internal static class UiContractTests
             Control hint = Find(form, "DragHint_" + type);
             Assert(path.Text == "" && path.ReadOnly && path.AllowDrop, "empty path retains selection behavior " + type);
             Assert(hint != null && hint.Visible && hint.AllowDrop && hint.Parent == path.Parent &&
-                hint.Text == "拖入 BIN 或粘贴路径", "visible drag prompt accepts drops " + type);
+                hint.Text == "拖入固件或粘贴路径", "visible drag prompt accepts drops " + type);
             Assert(hint.Width >= 80 && hint.Height >= hint.Font.Height &&
                 hint.Parent.GetChildAtPoint(new Point(hint.Left + hint.Width / 2, hint.Top + hint.Height / 2)) == hint,
                 "drag prompt is visible above the input " + type + " hint=" + hint.Bounds + " input=" + path.Bounds);
