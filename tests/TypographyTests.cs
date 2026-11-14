@@ -48,6 +48,7 @@ internal static class TypographyTests
                 else Log.AppendLine("SKIP comparison: " + family + " is absent; no substitute font image generated.");
             }
             RenderApplication(Path.GetFullPath(args[0]), output);
+            VerifyExecutableAwareness(Path.GetFullPath(args[0]));
             File.WriteAllText(Path.Combine(output, "typography-diagnostics.txt"), Log.ToString(), Encoding.UTF8);
             Console.WriteLine("Typography diagnostic completed. " + output); return 0;
         }
@@ -56,6 +57,24 @@ internal static class TypographyTests
             Log.AppendLine("FAILED: " + ex.GetType().FullName + ": " + ex.Message);
             File.WriteAllText(Path.Combine(output, "typography-diagnostics.txt"), Log.ToString(), Encoding.UTF8);
             Console.Error.WriteLine("Typography diagnostic failed; see report."); return 1;
+        }
+    }
+
+    private static void VerifyExecutableAwareness(string path)
+    {
+        using (System.Diagnostics.Process process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = false }))
+        {
+            try
+            {
+                process.WaitForInputIdle(10000);
+                int awareness; int hr = GetProcessDpiAwareness(process.Handle, out awareness);
+                Log.AppendLine("Production EXE process DPI awareness: HRESULT=" + hr + "; value=" + awareness);
+                if (hr != 0 || awareness != 1) throw new InvalidOperationException("Production executable must be system DPI aware.");
+            }
+            finally
+            {
+                if (!process.HasExited) { process.CloseMainWindow(); if (!process.WaitForExit(5000)) { process.Kill(); process.WaitForExit(); } }
+            }
         }
     }
 
