@@ -14,63 +14,39 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Build Windows EXE
-        shell: powershell
-        run: ./build.ps1
-      - name: Core, FTP and UI contract checks
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-          New-Item -ItemType Directory -Force evidence/ci | Out-Null
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /out:FilenameRulesTests.exe (Join-Path $PWD 'src\Packager.cs') (Join-Path $PWD 'src\FilenameRules.cs') (Join-Path $PWD 'tests\FilenameRulesTests.cs')
-          if ($LASTEXITCODE) { throw 'Filename compile failed' }
-          & ./FilenameRulesTests.exe 2>&1 | Tee-Object evidence/ci/filename.log
-          if ($LASTEXITCODE) { throw 'Filename tests failed' }
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:HeaderViewerTests /out:HeaderViewerTests.exe (Get-ChildItem src/*.cs | ForEach-Object { $_.FullName }) (Join-Path $PWD 'tests\HeaderViewerTests.cs')
-          if ($LASTEXITCODE) { throw 'Header viewer compile failed' }
-          & ./HeaderViewerTests.exe evidence/ci/header 2>&1 | Tee-Object evidence/ci/header-viewer.log
-          if ($LASTEXITCODE) { throw 'Header viewer tests failed' }
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /out:CoreTests.exe (Join-Path $PWD 'src\Packager.cs') (Join-Path $PWD 'tests\CoreTests.cs')
-          if ($LASTEXITCODE) { throw 'Core compile failed' }
-          & ./CoreTests.exe "$env:RUNNER_TEMP/core-results" 2>&1 | Tee-Object evidence/ci/core.log
-          if ($LASTEXITCODE) { throw 'Core tests failed' }
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /main:FtpTests /out:FtpTests.exe (Join-Path $PWD 'src\Packager.cs') (Join-Path $PWD 'src\FtpUploader.cs') (Join-Path $PWD 'tests\FtpTests.cs')
-          if ($LASTEXITCODE) { throw 'FTP compile failed' }
-          & ./FtpTests.exe test-vectors/bundle-m4-esp32-v1.bin "$env:RUNNER_TEMP/ftp-results" 2>&1 | Tee-Object evidence/ci/ftp.log
-          if ($LASTEXITCODE) { throw 'FTP tests failed' }
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:UiContractTests.exe (Join-Path $PWD 'tests\UiContractTests.cs')
-          if ($LASTEXITCODE) { throw 'UI contract compile failed' }
-          & ./UiContractTests.exe dist/FirmwarePackager.exe evidence/ci 2>&1 | Tee-Object evidence/ci/ui-contract.log
-          if ($LASTEXITCODE) { throw 'UI contract tests failed' }
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:AppearanceTests.exe (Join-Path $PWD 'tests\AppearanceTests.cs')
-          if ($LASTEXITCODE) { throw 'Appearance test compile failed' }
-          & ./AppearanceTests.exe dist/FirmwarePackager.exe evidence/ci/appearance 2>&1 | Tee-Object evidence/ci/appearance.log
-          if ($LASTEXITCODE) { throw 'Appearance tests failed' }
-          python tests/independent_verify.py "$env:RUNNER_TEMP/core-results"
-          if ($LASTEXITCODE) { throw 'Independent verifier failed' }
-          python tests/verify_vector.py test-vectors
-          if ($LASTEXITCODE) { throw 'Reference vector verification failed' }
-          python tests/test_release_publisher.py
-          if ($LASTEXITCODE) { throw 'Release publisher safeguards failed' }
-          Get-FileHash dist/FirmwarePackager.exe | Format-List | Out-File evidence/ci/SHA256.txt
-      - name: Native font and DPI diagnostics
+          fetch-depth: 0
+      - name: Select tests from the effective diff
+        id: scope
         shell: powershell
         run: |
-          $ErrorActionPreference = 'Stop'
-          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /win32manifest:app.manifest /out:TypographyAwareTests.exe (Join-Path $PWD 'tests\TypographyTests.cs')
-          if ($LASTEXITCODE) { throw 'Typography aware compile failed' }
-          & ./TypographyAwareTests.exe dist/FirmwarePackager.exe evidence/ci/typography-aware
-          if ($LASTEXITCODE) { throw 'Typography aware diagnostics failed' }
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /nowin32manifest /out:TypographyBaselineTests.exe (Join-Path $PWD 'tests\TypographyTests.cs')
-          if ($LASTEXITCODE) { throw 'Typography baseline compile failed' }
-          & ./TypographyBaselineTests.exe dist/FirmwarePackager.exe evidence/ci/typography-baseline
-          if ($LASTEXITCODE) { throw 'Typography baseline diagnostics failed' }
+          python .github/scripts/select_tests.py
+          if ($LASTEXITCODE) { throw 'Test selection failed' }
+      - name: Documentation and selection safeguards
+        shell: powershell
+        run: |
+          python tests/check_docs.py
+          if ($LASTEXITCODE) { throw 'Documentation links failed' }
+          python tests/test_check_docs.py
+          if ($LASTEXITCODE) { throw 'Documentation checker tests failed' }
+          python tests/test_select_tests.py
+          if ($LASTEXITCODE) { throw 'Test selection safeguards failed' }
+      - name: Run selected tests
+        if: steps.scope.outputs.groups != ''
+        shell: powershell
+        env:
+          SELECTED_TEST_GROUPS: ${{ steps.scope.outputs.groups }}
+          BUILT_EXE: ${{ steps.scope.outputs.build }}
+        run: |
+          $evidenceDir = Join-Path $PWD 'evidence/ci'
+          New-Item -ItemType Directory -Force $evidenceDir | Out-Null
+          ./tests/run-selected.ps1 -Groups $env:SELECTED_TEST_GROUPS -EvidenceDirectory $evidenceDir
+          if ($env:BUILT_EXE -eq 'true') {
+            Get-FileHash dist/FirmwarePackager.exe | Format-List | Out-File (Join-Path $evidenceDir 'SHA256.txt')
+          }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
+        if: always() && steps.scope.outputs.build == 'true'
         with:
-          name: FirmwarePackager-V0.0.4-windows
+          name: FirmwarePackager-Windows-validation
           path: |
             dist/FirmwarePackager.exe
             evidence/ci/
