@@ -299,7 +299,7 @@ internal static class ReleaseUiTests
             uint id = (uint)process.Id;
             Node inlineUpload = Button(root, "上传到 FTP", 0);
             if (!IsWindowVisible(inlineUpload.Handle)) throw new Exception("FTP upload must be visible inline on startup.");
-            Node browseM4 = Button(root, "浏览", 2);
+            Node browseM4 = Button(root, "选择 M4 固件", 0);
             Node dropTarget = EditInRow(root, browseM4, 0);
             RealDrag(dropTarget.Handle, input);
             WaitUntil(delegate { return Describe(dropTarget.Handle).Text == input; }, "Native file drag did not populate the input path.");
@@ -312,25 +312,25 @@ internal static class ReleaseUiTests
             Node m4Version = EditInMetadataRow(root, browseM4, 1);
             if (Describe(m4Path.Handle).Text != input || Describe(m4Name.Handle).Text != Path.GetFileName(input))
                 throw new Exception("Browse dialog did not populate path and default firmware name.");
-            Click(Button(root, "生成联合包", 0).Handle);
+            Click(Button(root, "包生成", 0).Handle);
             DismissError(id, "打包失败", "版本");
             SetText(m4Version.Handle, "V000B01D15");
-            Click(Button(root, "选择位置", 0).Handle);
+            Click(Button(root, "选择输出位置", 0).Handle);
             ChooseFile(id, "保存联合固件包", output);
-            Node outputButton = Button(root, "生成联合包", 0);
-            Node outputEdit = EditInRow(root, Button(root, "选择位置", 0), 0);
+            Node outputButton = Button(root, "包生成", 0);
+            Node outputEdit = EditInRow(root, Button(root, "选择输出位置", 0), 0);
             if (Describe(outputEdit.Handle).Text != output) throw new Exception("Save dialog did not populate output path.");
             Click(outputButton.Handle);
             WaitUntil(delegate { return File.Exists(output) && ContainsText(root, "打包并校验成功"); }, "Build did not finish in the release GUI.");
             if (Packager.VerifyFile(output).Entries.Count != 1) throw new Exception("GUI-generated package is invalid.");
-            Click(Button(root, "打开并校验", 0).Handle);
+            Click(Button(root, "包校验", 0).Handle);
             ChooseFile(id, "打开并校验联合固件包", output);
             WaitUntil(delegate { return ContainsText(root, "校验通过"); }, "Open and verify did not display success.");
             if (args.Length == 3)
             {
                 string previous = Path.GetFullPath(args[2]);
                 if (!File.Exists(previous)) throw new Exception("Previous V1 sample not found.");
-                Click(Button(root, "打开并校验", 0).Handle);
+                Click(Button(root, "包校验", 0).Handle);
                 ChooseFile(id, "打开并校验联合固件包", previous);
                 WaitUntil(delegate { return ContainsText(root, Path.GetFileName(previous)) && ContainsText(root, "校验通过"); }, "Previous V1 sample did not verify in the GUI.");
                 if (Packager.VerifyFile(previous).Entries.Count != 2) throw new Exception("Previous V1 sample has unexpected contents.");
@@ -339,7 +339,7 @@ internal static class ReleaseUiTests
             corrupt[4096] ^= 1;
             string corruptPath = Path.Combine(work, "损坏 联合 包.bin");
             File.WriteAllBytes(corruptPath, corrupt);
-            Click(Button(root, "打开并校验", 0).Handle);
+            Click(Button(root, "包校验", 0).Handle);
             ChooseFile(id, "打开并校验联合固件包", corruptPath);
             DismissError(id, "校验失败", "固件 MD5");
             if (!ContainsText(root, "校验失败")) throw new Exception("Verification failure was not displayed in the result area.");

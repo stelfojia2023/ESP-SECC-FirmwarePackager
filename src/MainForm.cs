@@ -149,9 +149,9 @@ namespace SeccFirmwarePackager
         private readonly Label ftpStatus = new Label();
         private readonly ToolTip tooltips = new ToolTip();
         private readonly UiSounds sounds = new UiSounds();
-        private readonly Label overview = new Label();
         private Button ftpBrowseFile;
-        private LinkLabel ftpUsePackage;
+        private TableLayoutPanel workspace;
+        private SectionCard previewCard;
         private readonly TextBox ftpFile = new TextBox();
         private readonly Label ftpSourceKind = new Label();
         private string lastGeneratedPackage;
@@ -159,268 +159,151 @@ namespace SeccFirmwarePackager
         private string ftpAuthority;
         private bool ftpBusy;
         private bool changing;
+        private string lastPreviewMessage;
 
         public MainForm()
         {
-            Text = "固件联合打包工具 · V0.0.1";
-            Name = "MainForm";
+            Text = "打包工具 · V0.0.1"; Name = "MainForm";
             MinimumSize = new Size(1100, 720);
-            Rectangle workArea = Screen.PrimaryScreen.WorkingArea;
-            Size = new Size(Math.Max(1100, Math.Min(1240, workArea.Width - 32)),
-                Math.Max(720, Math.Min(850, workArea.Height - 24)));
+            Rectangle work = Screen.PrimaryScreen.WorkingArea;
+            Size = new Size(Math.Max(1100, Math.Min(1320, work.Width - 24)), Math.Max(720, Math.Min(980, work.Height - 24)));
             StartPosition = FormStartPosition.CenterScreen;
-            Font = new Font("Microsoft YaHei UI", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
-            AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = UiColors.Canvas;
+            Font = new Font("Microsoft YaHei UI", 9.5F); AutoScaleMode = AutoScaleMode.Dpi; BackColor = UiColors.Canvas;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
-
-            Panel scroll = new Panel { Name = "ContentScroll", Dock = DockStyle.Fill, AutoScroll = true };
-            Controls.Add(scroll);
-            TableLayoutPanel body = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 5,
-                Padding = new Padding(22, 12, 22, 16), Margin = Padding.Empty };
-            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
-            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
-            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
-            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 520));
-            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
-            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
-            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-            scroll.Controls.Add(body);
-
-            SectionCard inputsCard = new SectionCard { Name = "InputsCard", Dock = DockStyle.Fill, Margin = new Padding(0, 0, 12, 12) };
-            body.Controls.Add(inputsCard, 0, 1);
-            TableLayoutPanel inputs = CardLayout(6);
-            inputs.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+            Panel scroll = new Panel { Name = "ContentScroll", Dock = DockStyle.Fill, AutoScroll = true }; Controls.Add(scroll);
+            workspace = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 3,
+                Padding = new Padding(22, 18, 22, 18), Margin = Padding.Empty };
+            workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55)); workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 460));
+            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
+            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 270)); scroll.Controls.Add(workspace);
+            TableLayoutPanel inputs = CardLayout(5); inputs.Name = "InputsCard"; inputs.BackColor = UiColors.Canvas;
             for (int i = 0; i < 5; i++) inputs.RowStyles.Add(new RowStyle(SizeType.Percent, 20));
-            inputsCard.Controls.Add(inputs);
-            inputs.Controls.Add(TitleLabel("固件文件"), 0, 0);
+            workspace.Controls.Add(inputs, 0, 0);
             FirmwareType[] types = { FirmwareType.PFC, FirmwareType.LLC, FirmwareType.M4, FirmwareType.PLC, FirmwareType.ESP32 };
             for (int i = 0; i < types.Length; i++)
             {
-                // Keep the original input controls and handlers; only change their layout.
                 TableLayoutPanel staging = new TableLayoutPanel { ColumnCount = 7, RowCount = 2 };
                 AddRow(staging, types[i], 1);
-                TableLayoutPanel item = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 2,
-                    Margin = new Padding(0, 4, 0, 5), BackColor = Color.White };
-                item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
-                item.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-                item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
-                item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 66));
-                item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58));
+                Control[] c = new Control[7]; for (int n = 0; n < 7; n++) c[n] = staging.GetControlFromPosition(n, 1);
+                SectionCard card = new SectionCard { Name = "FirmwareCard_" + types[i], Dock = DockStyle.Fill, Margin = new Padding(0, 0, 12, 4), Padding = new Padding(14, 10, 14, 12) };
+                TableLayoutPanel item = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 2, Margin = Padding.Empty, BackColor = Color.White };
+                item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 76));
+                item.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); item.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+                item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
                 item.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); item.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-                Control[] controls = new Control[7];
-                for (int c = 0; c < 7; c++) controls[c] = staging.GetControlFromPosition(c, 1);
-                item.Controls.Add(controls[0], 0, 0);
-                item.Controls.Add(controls[1], 1, 0); item.SetColumnSpan(controls[1], 2);
-                item.Controls.Add(controls[2], 3, 0); item.Controls.Add(controls[3], 4, 0);
-                Label metadata = FieldLabel("名称 / 版本"); metadata.Font = new Font(Font.FontFamily, 7.8F);
-                item.Controls.Add(metadata, 0, 1);
-                item.Controls.Add(controls[4], 1, 1); item.Controls.Add(controls[5], 2, 1);
-                item.Controls.Add(controls[6], 3, 1); item.SetColumnSpan(controls[6], 2);
-                tooltips.SetToolTip(rows[i].PathBox, "粘贴路径或拖入一个 BIN 文件");
-                rows[i].PathBox.AccessibleName = types[i] + " 固件文件路径，可拖入文件";
-                rows[i].NameBox.AccessibleName = types[i] + " 固件名称";
-                rows[i].VersionBox.AccessibleName = types[i] + " 固件版本，手动填写";
-                staging.Dispose();
-                inputs.Controls.Add(item, 0, i + 1);
+                c[0].Font = new Font(Font.FontFamily, 12F, FontStyle.Bold); c[0].BackColor = Color.White; c[0].ForeColor = UiColors.Blue;
+                item.Controls.Add(c[0], 0, 0); item.SetRowSpan(c[0], 2);
+                item.Controls.Add(c[1], 1, 0); item.SetColumnSpan(c[1], 2);
+                item.Controls.Add(c[2], 3, 0); item.Controls.Add(c[3], 3, 1);
+                item.Controls.Add(c[4], 1, 1); item.Controls.Add(c[5], 2, 1);
+                ConfigureIcon((Button)c[2], "folder", "选择 " + types[i] + " 固件");
+                ConfigureIcon((Button)c[3], "clear", "清除 " + types[i] + " 选择（不删除文件）");
+                rows[i].PathBox.AccessibleName = types[i] + " 固件路径";
+                rows[i].NameBox.AccessibleName = types[i] + " 固件名称"; rows[i].VersionBox.AccessibleName = types[i] + " 固件版本";
+                // Size is shown in the dynamic list rather than repeated in each card.
+                c[6].Parent = null; c[6].Visible = false;
+                card.Controls.Add(item); inputs.Controls.Add(card, 0, i); staging.Dispose();
             }
-
-            SectionCard resultCard = new SectionCard { Name = "ResultCard", Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 12) };
-            body.Controls.Add(resultCard, 1, 1);
-            TableLayoutPanel result = CardLayout(8);
-            result.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            result.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-            result.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
-            result.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
-            result.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-            result.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-            result.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-            result.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            resultCard.Controls.Add(result);
-            result.Controls.Add(TitleLabel("打包概览"), 0, 0);
-            overview.Name = "PackageOverview"; overview.Dock = DockStyle.Fill;
-            overview.Font = new Font(Font.FontFamily, 16F, FontStyle.Bold); overview.ForeColor = UiColors.Ink;
-            result.Controls.Add(overview, 0, 1);
-            status.Name = "PreviewStatus"; status.Dock = DockStyle.Fill;
-            status.Multiline = true; status.ReadOnly = true; status.ScrollBars = ScrollBars.Vertical;
-            status.BorderStyle = BorderStyle.None; status.BackColor = Color.White; status.Font = new Font(Font.FontFamily, 8.5F);
-            result.Controls.Add(status, 0, 2);
-            result.Controls.Add(FieldLabel("输出 BIN"), 0, 3);
-            TableLayoutPanel outputRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
-            outputRow.RowCount = 1; outputRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            outputRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); outputRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
+            TableLayoutPanel right = CardLayout(3); right.BackColor = UiColors.Canvas;
+            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 124)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 124));
+            right.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); workspace.Controls.Add(right, 1, 0);
+            SectionCard loadCard = new SectionCard { Name = "AutoLoadCard", Dock = DockStyle.Fill, Margin = new Padding(6, 0, 0, 8) };
+            TableLayoutPanel load = CardLayout(2); load.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); load.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            TextBox folder = new TextBox { Name = "FolderPath", ReadOnly = true, Enabled = false, Text = "一键加载暂未实现，识别规则待确定", AccessibleName = "一键加载暂未实现" };
+            Button folderButton = new RaisedButton { Name = "BrowseFolder", Enabled = false, Dock = DockStyle.Fill };
+            ConfigureIcon(folderButton, "folder", "一键加载暂未实现"); load.Controls.Add(PathLine(folder, folderButton), 0, 0);
+            Button autoLoad = MainButton("AutoLoadButton", "一键加载", true); autoLoad.Enabled = false;
+            tooltips.SetToolTip(autoLoad, "暂未实现，文件识别规则待确定"); load.Controls.Add(RightActions(autoLoad), 0, 1);
+            loadCard.Controls.Add(load); right.Controls.Add(loadCard, 0, 0);
+            SectionCard packageCard = new SectionCard { Name = "PackageCard", Dock = DockStyle.Fill, Margin = new Padding(6, 0, 0, 8) };
+            TableLayoutPanel package = CardLayout(2); package.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); package.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             output.Name = "OutputPath"; output.AccessibleName = "输出 BIN 文件路径";
             output.TextChanged += delegate { tooltips.SetToolTip(output, output.Text); };
-            SoftField outputField = new SoftField(output, false) { Dock = DockStyle.Fill };
-            outputRow.Controls.Add(outputField, 0, 0);
-            Button browse = new RaisedButton { Name = "BrowseOutput", Text = "选择位置", Dock = DockStyle.Fill };
-            StyleButton(browse, false, false); browse.Click += BrowseOutput; outputRow.Controls.Add(browse, 1, 0);
-            result.Controls.Add(outputRow, 0, 4);
-            TableLayoutPanel actions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
-            actions.RowCount = 1; actions.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-            build.Name = "BuildButton"; build.Text = "生成联合包"; build.Dock = DockStyle.Fill;
-            StyleButton(build, true, false); build.Click += BuildClicked; actions.Controls.Add(build, 0, 0);
-            Button open = new RaisedButton { Name = "OpenVerifyButton", Text = "打开并校验", Dock = DockStyle.Fill };
-            StyleButton(open, false, false); open.Click += OpenClicked; actions.Controls.Add(open, 1, 0);
-            result.Controls.Add(actions, 0, 5);
-            result.Controls.Add(TitleLabel("FTP 上传"), 0, 6);
-            details.Name = "ResultDetails"; details.Multiline = true; details.ReadOnly = true;
-            details.ScrollBars = ScrollBars.Both; details.WordWrap = false; details.Text = "尚无操作记录";
-            SectionCard operationCard = new SectionCard { Name = "OperationResultCard", Dock = DockStyle.Fill };
-            TableLayoutPanel operation = CardLayout(2);
-            operation.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-            operation.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            operation.Controls.Add(TitleLabel("操作结果"), 0, 0);
-            operation.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill }, 0, 1);
-            operationCard.Controls.Add(operation);
-            body.Controls.Add(operationCard, 0, 3); body.SetColumnSpan(operationCard, 2);
-
-            grid.Name = "PreviewGrid"; grid.Dock = DockStyle.Fill;
-            grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.AllowUserToResizeRows = false;
-            grid.ReadOnly = true; grid.RowHeadersVisible = false; grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect; grid.BorderStyle = BorderStyle.None;
-            grid.BackgroundColor = Color.White; grid.GridColor = UiColors.Border;
-            grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal; grid.EnableHeadersVisualStyles = false;
-            grid.ColumnHeadersDefaultCellStyle.BackColor = UiColors.Canvas; grid.ColumnHeadersDefaultCellStyle.ForeColor = UiColors.Muted;
-            grid.DefaultCellStyle.SelectionBackColor = UiColors.SoftBlue; grid.DefaultCellStyle.SelectionForeColor = UiColors.Ink;
-            grid.RowTemplate.Height = 28;
-            grid.Columns.Add("Type", "类型"); grid.Columns.Add("Name", "名称"); grid.Columns.Add("Version", "版本");
-            grid.Columns.Add("Size", "原始大小（字节）"); grid.Columns.Add("Offset", "包内偏移");
-            grid.Columns[0].FillWeight = 55; grid.Columns[1].FillWeight = 160;
-            TableLayoutPanel preview = CardLayout(1); preview.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            preview.Controls.Add(grid, 0, 0);
-            AddDisclosure(body, 2, "包内容与偏移", preview, 290, "PreviewToggle");
-
-            TableLayoutPanel ftp = CardLayout(6);
-            ftp.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-            ftp.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-            ftp.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); ftp.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-            ftp.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); ftp.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            TableLayoutPanel addressRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, Margin = Padding.Empty };
-            addressRow.RowCount = 1; addressRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            addressRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 76)); addressRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            addressRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140)); addressRow.Controls.Add(FieldLabel("FTP 地址"), 0, 0);
-            ftpAddress.Name = "FtpAddress"; ftpAddress.AccessibleName = "FTP 地址";
+            Button browse = new RaisedButton { Name = "BrowseOutput", Dock = DockStyle.Fill }; ConfigureIcon(browse, "folder", "选择输出位置"); browse.Click += BrowseOutput;
+            package.Controls.Add(PathLine(output, browse), 0, 0);
+            build.Name = "BuildButton"; build.Text = "包生成"; SetupMainButton(build, true); build.Click += BuildClicked;
+            Button verify = MainButton("OpenVerifyButton", "包校验", false); verify.Click += OpenClicked;
+            package.Controls.Add(RightActions(verify, build), 0, 1); packageCard.Controls.Add(package); right.Controls.Add(packageCard, 0, 1);
+            SectionCard ftpCard = new SectionCard { Name = "FtpInlinePanel", Dock = DockStyle.Fill, Margin = new Padding(6, 0, 0, 4) };
+            TableLayoutPanel ftp = CardLayout(5);
+            for (int i = 0; i < 4; i++) ftp.RowStyles.Add(new RowStyle(SizeType.Absolute, 32)); ftp.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            ftpFile.Name = "FtpFilePath"; ftpFile.ReadOnly = true; ftpFile.AllowDrop = true; ftpFile.AccessibleName = "FTP 上传文件";
+            ftpFile.DragEnter += InputDragEnter;
+            ftpFile.DragDrop += delegate(object sender, DragEventArgs e) { string[] files = DraggedFiles(e); if (!ftpBusy && files != null && files.Length == 1 && File.Exists(files[0])) SetFtpFile(files[0], false); };
+            ftpFile.TextChanged += delegate { tooltips.SetToolTip(ftpFile, ftpFile.Text); };
+            ftpBrowseFile = new RaisedButton { Name = "FtpBrowseFile", Dock = DockStyle.Fill }; ConfigureIcon(ftpBrowseFile, "folder", "选择 FTP 上传文件");
+            ftpBrowseFile.Click += delegate { using (OpenFileDialog d = new OpenFileDialog { Title = "选择 FTP 上传文件", Filter = "所有文件 (*.*)|*.*", CheckFileExists = true }) if (d.ShowDialog(this) == DialogResult.OK) SetFtpFile(d.FileName, false); };
+            ftp.Controls.Add(LabeledLine("文件", PathLine(ftpFile, ftpBrowseFile)), 0, 0);
+            ftpAddress.Name = "FtpAddress"; ftpAddress.AccessibleName = "FTP URL";
             ftpAddress.PasteAddress = delegate(string value) { ApplyFtpAddress(value, true); };
             ftpAddress.Leave += delegate { if (!String.IsNullOrWhiteSpace(ftpAddress.Text)) ApplyFtpAddress(ftpAddress.Text, false); };
             ftpAddress.KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; ApplyFtpAddress(ftpAddress.Text, true); } };
-            addressRow.Controls.Add(new SoftField(ftpAddress, false) { Dock = DockStyle.Fill }, 1, 0);
-            ftpUpload.Name = "FtpUploadButton"; ftpUpload.Text = "上传到 FTP"; ftpUpload.Dock = DockStyle.Fill;
-            StyleButton(ftpUpload, true, false); ftpUpload.Click += FtpUploadClicked; addressRow.Controls.Add(ftpUpload, 2, 0);
-            ftp.Controls.Add(addressRow, 0, 2);
-            TableLayoutPanel credentials = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, Margin = Padding.Empty };
-            credentials.RowCount = 1; credentials.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            credentials.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 76)); credentials.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-            credentials.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64)); credentials.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-            credentials.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
-            credentials.Controls.Add(FieldLabel("用户名"), 0, 0); ftpUser.Name = "FtpUser"; ftpUser.AccessibleName = "FTP 用户名";
-            credentials.Controls.Add(new SoftField(ftpUser, false) { Dock = DockStyle.Fill }, 1, 0);
-            credentials.Controls.Add(FieldLabel("密码"), 2, 0); ftpPassword.Name = "FtpPassword"; ftpPassword.UseSystemPasswordChar = true;
-            ftpPassword.AccessibleName = "FTP 密码"; credentials.Controls.Add(new SoftField(ftpPassword, false) { Dock = DockStyle.Fill }, 3, 0);
-            ftp.Controls.Add(credentials, 0, 3);
-            ftp.Controls.Add(FieldLabel("普通 FTP 明文传输；同名文件可能覆盖。密码只保留在当前窗口。"), 0, 4);
-            ftpStatus.Name = "FtpStatus"; ftpStatus.Dock = DockStyle.Fill; ftpStatus.ForeColor = UiColors.Muted;
-            ftpStatus.Text = "生成后默认上传联合包；也可独立选择本地文件。"; ftp.Controls.Add(ftpStatus, 0, 5);
-            TableLayoutPanel fileRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty };
-            fileRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            fileRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 76));
-            fileRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            fileRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
-            fileRow.Controls.Add(FieldLabel("上传文件"), 0, 0);
-            ftpFile.Name = "FtpFilePath"; ftpFile.ReadOnly = true; ftpFile.AllowDrop = true;
-            ftpFile.DragEnter += InputDragEnter;
-            ftpFile.DragDrop += delegate(object sender, DragEventArgs e)
-            {
-                string[] files = DraggedFiles(e);
-                if (!ftpBusy && files != null && files.Length == 1 && File.Exists(files[0])) SetFtpFile(files[0], false);
-            }; ftpFile.AccessibleName = "FTP 上传的本地文件";
-            ftpFile.TextChanged += delegate { tooltips.SetToolTip(ftpFile, ftpFile.Text); };
-            fileRow.Controls.Add(new SoftField(ftpFile, false) { Dock = DockStyle.Fill }, 1, 0);
-            Button chooseFile = new RaisedButton { Name = "FtpBrowseFile", Text = "选择本地文件", Dock = DockStyle.Fill };
-            ftpBrowseFile = chooseFile;
-            StyleButton(chooseFile, false, false);
-            chooseFile.Click += delegate
-            {
-                using (OpenFileDialog dialog = new OpenFileDialog { Title = "选择 FTP 上传文件", Filter = "所有文件 (*.*)|*.*", CheckFileExists = true })
-                    if (dialog.ShowDialog(this) == DialogResult.OK) SetFtpFile(dialog.FileName, false);
-            };
-            fileRow.Controls.Add(chooseFile, 2, 0); ftp.Controls.Add(fileRow, 0, 0);
-            TableLayoutPanel sourceRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
-            sourceRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            sourceRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); sourceRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
-            ftpSourceKind.Name = "FtpSourceKind"; ftpSourceKind.Dock = DockStyle.Fill; ftpSourceKind.ForeColor = UiColors.Muted;
-            ftpSourceKind.Text = "拖入文件，或浏览选择本地文件"; sourceRow.Controls.Add(ftpSourceKind, 0, 0);
-            LinkLabel usePackage = new LinkLabel { Name = "FtpUsePackage", Text = "使用最近生成的联合包", Dock = DockStyle.Fill, LinkColor = UiColors.Blue };
-            ftpUsePackage = usePackage;
-            usePackage.LinkClicked += delegate
-            {
-                if (!String.IsNullOrEmpty(lastGeneratedPackage)) SetFtpFile(lastGeneratedPackage, true);
-                else { ftpStatus.Text = "还没有生成联合包；可直接选择本地文件上传。"; ftpStatus.ForeColor = UiColors.Muted; }
-            };
-            sourceRow.Controls.Add(usePackage, 1, 0); ftp.Controls.Add(sourceRow, 0, 1);
-            TableLayoutPanel inlineFtp = new TableLayoutPanel { Name = "FtpInlinePanel", Dock = DockStyle.Fill,
-                ColumnCount = 1, RowCount = 6, Margin = Padding.Empty };
-            for (int n = 0; n < 5; n++) inlineFtp.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            inlineFtp.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-            // Reuse the existing fields and handlers; only their presentation changes.
-            fileRow.ColumnStyles[0].Width = 60; fileRow.ColumnStyles[2].Width = 76;
-            chooseFile.Text = "选择文件"; inlineFtp.Controls.Add(fileRow, 0, 0);
-            addressRow.Controls.Remove(ftpUpload);
-            addressRow.ColumnCount = 2; addressRow.ColumnStyles.RemoveAt(2); addressRow.ColumnStyles[0].Width = 60;
-            inlineFtp.Controls.Add(addressRow, 0, 1);
-            foreach (TextBox field in new[] { ftpUser, ftpPassword })
-            {
-                TableLayoutPanel line = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
-                line.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 60));
-                line.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-                line.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-                line.Controls.Add(FieldLabel(field == ftpUser ? "用户名" : "密码"), 0, 0);
-                line.Controls.Add(field.Parent, 1, 0);
-                inlineFtp.Controls.Add(line, 0, field == ftpUser ? 2 : 3);
-            }
-            FlowLayoutPanel ftpActions = new FlowLayoutPanel { Dock = DockStyle.Fill, Margin = Padding.Empty };
-            ftpUpload.Dock = DockStyle.None; ftpUpload.Size = new Size(128, 30);
-            usePackage.Dock = DockStyle.None; usePackage.Size = new Size(140, 30); usePackage.Text = "使用最近联合包";
-            ftpActions.Controls.Add(ftpUpload); ftpActions.Controls.Add(usePackage);
-            inlineFtp.Controls.Add(ftpActions, 0, 4);
-            ftpSourceKind.Text = "选择文件"; inlineFtp.Controls.Add(ftpSourceKind, 0, 5);
-            result.Controls.Add(inlineFtp, 0, 7);
+            ftpUser.Name = "FtpUser"; ftpUser.AccessibleName = "FTP 用户名";
+            ftpPassword.Name = "FtpPassword"; ftpPassword.UseSystemPasswordChar = true; ftpPassword.AccessibleName = "FTP 密码";
+            ftp.Controls.Add(LabeledLine("URL", new SoftField(ftpAddress, false) { Dock = DockStyle.Fill }), 0, 1);
+            ftp.Controls.Add(LabeledLine("用户名", new SoftField(ftpUser, false) { Dock = DockStyle.Fill }), 0, 2);
+            ftp.Controls.Add(LabeledLine("密码", new SoftField(ftpPassword, false) { Dock = DockStyle.Fill }), 0, 3);
+            ftpUpload.Name = "FtpUploadButton"; ftpUpload.Text = "上传到 FTP"; SetupMainButton(ftpUpload, true); ftpUpload.Click += FtpUploadClicked;
+            ftp.Controls.Add(RightActions(ftpUpload), 0, 4); ftpCard.Controls.Add(ftp); right.Controls.Add(ftpCard, 0, 2);
             ftpStatus.TextChanged += delegate { details.ForeColor = ftpStatus.ForeColor; details.Text = ftpStatus.Text; };
             FormClosing += FtpFormClosing;
-
-            LinkLabel limits = new LinkLabel { Text = "设备使用注意", Dock = DockStyle.Fill,
-                LinkColor = UiColors.Muted, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(4, 0, 0, 0) };
-            limits.LinkClicked += delegate { MessageBox.Show(this,
-                "当前设备尚未接入联合包解析。6 MiB 暂存区与 2.5 MiB ESP32 槽为候选方案，并非已部署的设备配置。\n\n" +
-                "上传成功不代表设备已完成升级；使用前请确认目标设备支持该文件。",
-                "设备使用注意", MessageBoxButtons.OK, MessageBoxIcon.Information); };
-            body.Controls.Add(limits, 0, 4); body.SetColumnSpan(limits, 2);
+            grid.Name = "PreviewGrid"; grid.Dock = DockStyle.Fill; grid.ReadOnly = true;
+            grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.AllowUserToResizeRows = false;
+            grid.RowHeadersVisible = false; grid.ColumnHeadersVisible = false; grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            grid.BorderStyle = BorderStyle.None; grid.BackgroundColor = Color.White; grid.GridColor = UiColors.Border;
+            grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal; grid.RowTemplate.Height = 27; grid.ScrollBars = ScrollBars.Horizontal;
+            grid.DefaultCellStyle.SelectionBackColor = UiColors.SoftBlue; grid.DefaultCellStyle.SelectionForeColor = UiColors.Ink;
+            grid.Columns.Add("Type", "类型"); grid.Columns.Add("Name", "文件路径"); grid.Columns.Add("Size", "大小"); grid.Columns.Add("Offset", "偏移");
+            grid.Columns[0].FillWeight = 40; grid.Columns[1].FillWeight = 240; grid.Columns[2].FillWeight = 100; grid.Columns[3].FillWeight = 70;
+            grid.Columns[0].DefaultCellStyle.BackColor = UiColors.SoftBlue;
+            previewCard = new SectionCard { Name = "PreviewCard", Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 4), Padding = new Padding(14, 10, 14, 12), Visible = false };
+            previewCard.Controls.Add(grid); workspace.Controls.Add(previewCard, 0, 1); workspace.SetColumnSpan(previewCard, 2);
+            SectionCard result = new SectionCard { Name = "OperationResultCard", Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
+            TableLayoutPanel resultBody = CardLayout(2); resultBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); resultBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            resultBody.Controls.Add(TitleLabel("操作结果"), 0, 0);
+            details.Name = "ResultDetails"; details.Multiline = true; details.ReadOnly = true; details.ScrollBars = ScrollBars.Both;
+            details.WordWrap = false; details.Text = "";
+            resultBody.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill }, 0, 1); result.Controls.Add(resultBody);
+            workspace.Controls.Add(result, 0, 2); workspace.SetColumnSpan(result, 2);
             RefreshPreview();
+        }
+
+        private Button MainButton(string name, string text, bool primary)
+        { Button b = new RaisedButton { Name = name, Text = text }; SetupMainButton(b, primary); return b; }
+        private void SetupMainButton(Button b, bool primary)
+        { StyleButton(b, primary, false); b.Size = new Size(180, 40); b.Anchor = AnchorStyles.Right | AnchorStyles.Top; }
+        private static Control RightActions(params Button[] buttons)
+        {
+            TableLayoutPanel p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = buttons.Length + 1, RowCount = 1, Margin = Padding.Empty };
+            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); p.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            for (int i = 0; i < buttons.Length; i++) { p.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 188)); p.Controls.Add(buttons[i], i + 1, 0); }
+            return p;
+        }
+        private static Control PathLine(TextBox field, Button browse)
+        {
+            TableLayoutPanel p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); p.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48)); p.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            p.Controls.Add(new SoftField(field, false) { Dock = DockStyle.Fill }, 0, 0); p.Controls.Add(browse, 1, 0); return p;
+        }
+        private static Control LabeledLine(string title, Control content)
+        {
+            TableLayoutPanel p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+            p.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 62)); p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); p.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            p.Controls.Add(FieldLabel(title), 0, 0); p.Controls.Add(content, 1, 0); return p;
+        }
+        private void ConfigureIcon(Button b, string icon, string accessible)
+        {
+            StyleButton(b, false, true); b.Text = accessible; b.AccessibleName = accessible;
+            RaisedButton raised = b as RaisedButton;
+            if (raised != null) { raised.IconOnly = true; raised.Glyph = icon == "clear" ? ButtonGlyph.Clear : b.Name == "BrowseOutput" ? ButtonGlyph.FolderDownload : ButtonGlyph.Folder; }
+            tooltips.SetToolTip(b, accessible);
         }
 
         private static Label TitleLabel(string title)
         {
             Label label = FieldLabel(title); label.ForeColor = UiColors.Ink;
             label.Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold); return label;
-        }
-
-        private void AddDisclosure(TableLayoutPanel body, int row, string title, Control content, int expandedHeight, string name)
-        {
-            SectionCard card = new SectionCard { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 8), Padding = new Padding(16, 5, 18, 10) };
-            TableLayoutPanel layout = CardLayout(2); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); card.Controls.Add(layout);
-            Button toggle = new RaisedButton { Name = name, Text = "›  " + title, Dock = DockStyle.None, Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left, Width = 210, Height = 32, TextAlign = ContentAlignment.MiddleLeft };
-            StyleButton(toggle, false, true); layout.Controls.Add(toggle, 0, 0); layout.Controls.Add(content, 0, 1); content.Visible = false;
-            toggle.Click += delegate
-            {
-                bool show = !content.Visible; content.Visible = show; toggle.Text = (show ? "⌄  " : "›  ") + title;
-                float scale = layout.RowStyles[0].Height / 32F;
-                body.RowStyles[row].Height = (show ? expandedHeight : 56) * scale;
-                card.PerformLayout(); body.PerformLayout();
-            };
-            body.Controls.Add(card, 0, row); body.SetColumnSpan(card, 2);
         }
 
         private void SetFtpFile(string path, bool package)
@@ -469,8 +352,11 @@ namespace SeccFirmwarePackager
             button.FlatAppearance.BorderSize = 0;
             button.BackColor = primary ? Color.FromArgb(219, 230, 214) : (subtle ? Color.White : Color.FromArgb(238, 234, 242));
             button.ForeColor = subtle ? UiColors.Muted : UiColors.Ink;
-            button.Click += delegate { sounds.Play("click"); };
+            button.Click -= PlayClickSound;
+            button.Click += PlayClickSound;
         }
+
+        private void PlayClickSound(object sender, EventArgs e) { sounds.Play("click"); }
 
         private void AddRow(TableLayoutPanel table, FirmwareType type, int index)
         {
@@ -514,7 +400,7 @@ namespace SeccFirmwarePackager
             StyleButton(clear, false, true);
             clear.Click += delegate { ClearInput(row); };
             table.Controls.Add(clear, 3, index);
-            row.NameBox = new TextBox();
+            row.NameBox = new PlaceholderTextBox { PlaceholderText = "固件名称" };
             row.NameBox.Name = "Name_" + type;
             StyleTextBox(row.NameBox, false);
             row.NameBox.TextChanged += InputChanged;
@@ -522,7 +408,7 @@ namespace SeccFirmwarePackager
             SoftField nameField = new SoftField(row.NameBox, false);
             nameField.Dock = DockStyle.Fill;
             table.Controls.Add(nameField, 4, index);
-            row.VersionBox = new TextBox();
+            row.VersionBox = new PlaceholderTextBox { PlaceholderText = "固件版本" };
             row.VersionBox.Name = "Version_" + type;
             StyleTextBox(row.VersionBox, false);
             row.VersionBox.TextChanged += InputChanged;
@@ -639,34 +525,34 @@ namespace SeccFirmwarePackager
 
         private void RefreshPreview()
         {
+            if (workspace == null || previewCard == null) return;
+            List<FirmwareInput> selected = Inputs();
+            grid.Rows.Clear();
+            PackageReport plan = null;
+            string problem = null;
+            try { if (selected.Count != 0) plan = Packager.Plan(selected); }
+            catch (Exception ex) { problem = ex.Message; }
             foreach (Row row in rows)
             {
-                if (String.IsNullOrWhiteSpace(row.PathBox.Text)) row.SizeLabel.Text = "未选择";
-                else
-                {
-                    try { row.SizeLabel.Text = new FileInfo(row.PathBox.Text).Length.ToString("N0") + " B"; }
-                    catch { row.SizeLabel.Text = "不可读取"; }
-                }
+                if (String.IsNullOrWhiteSpace(row.PathBox.Text)) { row.SizeLabel.Text = "未选择"; continue; }
+                string size;
+                try { long bytes = new FileInfo(row.PathBox.Text).Length; size = bytes.ToString("N0") + " B"; }
+                catch { size = "不可读取"; }
+                row.SizeLabel.Text = size;
+                string offset = "待校验";
+                if (plan != null) foreach (FirmwareEntry entry in plan.Entries) if (entry.Type == row.Type) { offset = "0x" + entry.Offset.ToString("X8"); break; }
+                grid.Rows.Add(row.Type, row.PathBox.Text, "大小：" + size, "偏移：" + offset);
             }
-            overview.Text = "已选择 " + Inputs().Count + " / 5 类固件";
-            grid.Rows.Clear();
-            try
-            {
-                PackageReport plan = Packager.Plan(Inputs());
-                foreach (FirmwareEntry entry in plan.Entries)
-                    grid.Rows.Add(entry.Type, entry.Name, entry.Version, entry.Size.ToString("N0"), "0x" + entry.Offset.ToString("X6"));
-                StringBuilder text = new StringBuilder();
-                text.AppendFormat("预计联合包：{0:N0} 字节。", plan.TotalSize);
-                foreach (string warning in plan.Warnings) text.Append("  警告：").Append(warning);
-                status.Text = text.ToString();
-                overview.Text = plan.Entries.Count + " 类固件  ·  " + (plan.TotalSize / 1024.0).ToString("N1") + " KiB";
-                status.ForeColor = plan.Warnings.Count == 0 ? Color.FromArgb(29, 120, 88) : Color.FromArgb(166, 94, 14);
-            }
-            catch (Exception e)
-            {
-                status.Text = Inputs().Count == 0 ? "选择固件后显示包大小与检查结果。" : "未就绪：" + e.Message;
-                status.ForeColor = Inputs().Count == 0 ? UiColors.Muted : Color.FromArgb(181, 50, 57);
-            }
+            previewCard.Visible = grid.Rows.Count > 0;
+            workspace.RowStyles[1].Height = grid.Rows.Count == 0 ? 0 : 34 + grid.Rows.Count * grid.RowTemplate.Height;
+            status.Text = problem == null ? "" : "未就绪：" + problem;
+            status.ForeColor = problem == null ? UiColors.Muted : Color.FromArgb(181, 50, 57);
+            if (plan != null && plan.Warnings.Count > 0) status.Text = String.Join("\r\n", plan.Warnings.ToArray());
+            // Validation remains visible without a permanent overview panel.
+            if (!String.IsNullOrEmpty(status.Text)) { details.ForeColor = status.ForeColor; details.Text = status.Text; }
+            else if (!String.IsNullOrEmpty(lastPreviewMessage) && details.Text == lastPreviewMessage) { details.Text = ""; details.ForeColor = UiColors.Ink; }
+            lastPreviewMessage = status.Text;
+            workspace.PerformLayout();
         }
 
         private void BrowseOutput(object sender, EventArgs e)
@@ -701,8 +587,6 @@ namespace SeccFirmwarePackager
                 ftpAuthority = authority;
                 ftpAddress.Text = location.DirectoryUri.AbsoluteUri;
                 tooltips.SetToolTip(ftpAddress, ftpAddress.Text);
-                ftpStatus.ForeColor = UiColors.Muted;
-                ftpStatus.Text = "已识别 FTP 服务器、端口和目录；上传前将确认目标文件。";
                 return true;
             }
             catch (InvalidDataException ex)
@@ -791,7 +675,7 @@ namespace SeccFirmwarePackager
             ftpUpload.Enabled = !busy;
             ftpBrowseFile.Enabled = !busy;
             ftpFile.Enabled = !busy;
-            ftpUsePackage.Enabled = !busy;
+
             ftpAddress.Enabled = !busy;
             ftpUser.Enabled = !busy;
             ftpPassword.Enabled = !busy;
@@ -871,8 +755,7 @@ namespace SeccFirmwarePackager
             text.AppendFormat("联合包大小：{0:N0} 字节；固件数量：{1}\r\n", report.TotalSize, report.Entries.Count);
             foreach (FirmwareEntry entry in report.Entries)
             {
-                text.AppendFormat("\r\n{0}  名称：{1}  版本：{2}\r\n", entry.Type, entry.Name, entry.Version);
-                text.AppendFormat("  大小：{0:N0} 字节\r\n", entry.Size);
+                text.AppendFormat("{0}  {1}  {2}  大小：{3:N0} 字节\r\n", entry.Type, entry.Name, entry.Version, entry.Size);
             }
             foreach (string warning in report.Warnings) text.AppendLine("\r\n警告：" + warning);
             sounds.Play("success");

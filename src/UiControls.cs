@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
 using System.Media;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyVersion("0.0.1.0")]
@@ -10,11 +11,28 @@ using System.Windows.Forms;
 
 namespace SeccFirmwarePackager
 {
+    internal enum ButtonGlyph { None, Folder, Clear, FolderDownload }
+
     // Retains native Button keyboard activation, accessibility and Click semantics.
     internal sealed class RaisedButton : Button
     {
         private bool pressed;
         private bool hovered;
+        private ButtonGlyph glyph;
+        private bool iconOnly;
+        public ButtonGlyph Glyph
+        {
+            get { return glyph; }
+            set
+            {
+                glyph = value;
+                if (String.IsNullOrEmpty(AccessibleName) && value != ButtonGlyph.None)
+                    AccessibleName = value == ButtonGlyph.Clear ? "清除" : value == ButtonGlyph.FolderDownload ? "选择输出位置" : "选择文件";
+                Invalidate();
+            }
+        }
+        // Keep Text as a meaningful caption for accessibility even when not painted.
+        public bool IconOnly { get { return iconOnly; } set { iconOnly = value; Invalidate(); } }
         public RaisedButton()
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
@@ -51,11 +69,52 @@ namespace SeccFirmwarePackager
                 using (Brush brush = new SolidBrush(face)) e.Graphics.FillPath(brush, path);
                 using (Pen pen = new Pen(Color.FromArgb(216, 218, 207))) e.Graphics.DrawPath(pen, path);
             }
-            TextRenderer.DrawText(e.Graphics, Text, Font, r, Enabled ? ForeColor : SystemColors.GrayText,
-                (TextAlign == ContentAlignment.MiddleLeft ? TextFormatFlags.Left : TextFormatFlags.HorizontalCenter) |
-                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+            Rectangle textRect = r;
+            if (glyph != ButtonGlyph.None)
+            {
+                float size = Math.Min(22F * e.Graphics.DpiX / 96F, Math.Min(r.Width - 8F, r.Height - 8F));
+                if (size >= 4)
+                {
+                    float x = iconOnly ? r.Left + (r.Width - size) / 2F : r.Left + 8F;
+                    float y = r.Top + (r.Height - size) / 2F;
+                    DrawGlyph(e.Graphics, new RectangleF(x, y, size, size), Enabled ? ForeColor : SystemColors.GrayText);
+                    if (!iconOnly) { int offset = (int)Math.Ceiling(size + 12); textRect.X += offset; textRect.Width -= offset; }
+                }
+            }
+            if (!iconOnly || glyph == ButtonGlyph.None)
+                TextRenderer.DrawText(e.Graphics, Text, Font, textRect, Enabled ? ForeColor : SystemColors.GrayText,
+                    (TextAlign == ContentAlignment.MiddleLeft ? TextFormatFlags.Left : TextFormatFlags.HorizontalCenter) |
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
             if (Focused && ShowFocusCues) { r.Inflate(-4, -4); ControlPaint.DrawFocusRectangle(e.Graphics, r, ForeColor, face); }
         }
+        private void DrawGlyph(Graphics graphics, RectangleF r, Color color)
+        {
+            float x = r.X, y = r.Y, w = r.Width, h = r.Height;
+            using (Pen pen = new Pen(color, Math.Max(1.2F, w / 14F)))
+            {
+                pen.StartCap = LineCap.Round; pen.EndCap = LineCap.Round; pen.LineJoin = LineJoin.Round;
+                if (glyph == ButtonGlyph.Clear)
+                {
+                    graphics.DrawLine(pen, x + w * .22F, y + h * .22F, x + w * .78F, y + h * .78F);
+                    graphics.DrawLine(pen, x + w * .78F, y + h * .22F, x + w * .22F, y + h * .78F);
+                    return;
+                }
+                PointF[] outline = {
+                    new PointF(x + w * .08F, y + h * .82F), new PointF(x + w * .08F, y + h * .17F),
+                    new PointF(x + w * .36F, y + h * .17F), new PointF(x + w * .47F, y + h * .31F),
+                    new PointF(x + w * .91F, y + h * .31F), new PointF(x + w * .91F, y + h * .82F),
+                    new PointF(x + w * .08F, y + h * .82F)
+                };
+                graphics.DrawLines(pen, outline);
+                if (glyph == ButtonGlyph.FolderDownload)
+                {
+                    graphics.DrawLine(pen, x + w * .65F, y + h * .46F, x + w * .65F, y + h * .88F);
+                    graphics.DrawLine(pen, x + w * .50F, y + h * .73F, x + w * .65F, y + h * .88F);
+                    graphics.DrawLine(pen, x + w * .80F, y + h * .73F, x + w * .65F, y + h * .88F);
+                }
+            }
+        }
+
         private static GraphicsPath Round(Rectangle r)
         {
             int d = Math.Min(12, Math.Min(r.Width, r.Height));
@@ -63,6 +122,49 @@ namespace SeccFirmwarePackager
             p.AddArc(r.Left, r.Top, d, d, 180, 90); p.AddArc(r.Right - d, r.Top, d, d, 270, 90);
             p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90); p.AddArc(r.Left, r.Bottom - d, d, d, 90, 90);
             p.CloseFigure(); return p;
+        }
+    }
+
+    // Placeholder never enters Text: validation, copying and package metadata see
+    // only user input. Native Windows cue banners remain compatible with .NET 4.
+    internal sealed class PlaceholderTextBox : TextBox
+    {
+        private string placeholder = "";
+        private static bool IsWindows { get { return Environment.OSVersion.Platform == PlatformID.Win32NT; } }
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr handle, int message, IntPtr wParam, string lParam);
+        public string PlaceholderText
+        {
+            get { return placeholder; }
+            set { placeholder = value ?? ""; ApplyPlaceholder(); Invalidate(); }
+        }
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e); ApplyPlaceholder();
+        }
+        private void ApplyPlaceholder()
+        {
+            if (IsHandleCreated && IsWindows)
+                SendMessage(Handle, 0x1501 /* EM_SETCUEBANNER */, IntPtr.Zero, placeholder);
+        }
+        protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Invalidate(); }
+        protected override void OnGotFocus(EventArgs e) { base.OnGotFocus(e); Invalidate(); }
+        protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
+        protected override void WndProc(ref Message message)
+        {
+            base.WndProc(ref message);
+            // Mono has no EM_SETCUEBANNER support. Paint a read-only visual cue
+            // after its normal single-line edit painting, without changing Text.
+            if (!IsWindows && message.Msg == 0x000F && !Focused && TextLength == 0 &&
+                !Multiline && !String.IsNullOrEmpty(placeholder))
+            {
+                using (Graphics graphics = Graphics.FromHwnd(Handle))
+                {
+                    Rectangle bounds = ClientRectangle; bounds.Inflate(-1, 0);
+                    TextRenderer.DrawText(graphics, placeholder, Font, bounds, UiColors.Muted,
+                        TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                }
+            }
         }
     }
 

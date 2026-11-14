@@ -35,7 +35,7 @@ internal static class UiContractTests
                 Assert(Find(form, "FtpStatus") == null, "FTP status shares bottom result instead of duplicate label");
                 Assert(Find(form, "BrandHeader") == null, "no duplicate banner");
                 foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
-                    foreach (string prefix in new[] { "Path_", "Name_", "Version_", "Size_", "Select_", "Clear_" })
+                    foreach (string prefix in new[] { "Path_", "Name_", "Version_", "Select_", "Clear_" })
                         Assert(Find(form, prefix + type) != null, "retained input " + prefix + type);
                 Assert(Find(form, "SoundEnabled") == null, "no sound selector");
                 object sounds = form.GetType().GetField("sounds", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
@@ -51,13 +51,23 @@ internal static class UiContractTests
                 status.ForeColor = Color.FromArgb(181, 50, 57); status.Text = "上传失败：synthetic-test";
                 Assert(Find(form, "ResultDetails").Text == status.Text && Find(form, "ResultDetails").ForeColor == status.ForeColor,
                     "FTP errors synchronize to red bottom result");
-                Control grid = Find(form, "PreviewGrid");
-                Assert(!grid.Visible && Find(form, "FtpAddress").Visible, "preview collapsed and FTP visible initially");
-                Button preview = (Button)Find(form, "PreviewToggle");
-                preview.PerformClick(); Application.DoEvents(); Assert(grid.Visible, "preview opens inline");
+                DataGridView grid = (DataGridView)Find(form, "PreviewGrid");
+                Assert(grid.Rows.Count == 0 && !grid.ColumnHeadersVisible, "empty preview has no rows or column headers");
+                Assert(Find(form, "PreviewToggle") == null && Find(form, "FtpUsePackage") == null, "removed detail toggle and package shortcut");
+                Assert(Find(form, "FtpAddress").Visible, "FTP visible initially");
+                Assert(!Find(form, "AutoLoadButton").Enabled && Find(form, "FolderPath") != null, "automatic loading explicitly disabled");
+                foreach (string name in new[] { "AutoLoadButton", "OpenVerifyButton", "BuildButton", "FtpUploadButton" })
+                    Assert(Find(form, name).Size == new Size(180, 40), "uniform primary button " + name + " actual=" + Find(form, name).Size);
+                foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
+                {
+                    Assert(Find(form, "Name_" + type).Text == "", "name placeholder not actual input " + type);
+                    Assert(Find(form, "Version_" + type).Text == "", "version placeholder not actual input " + type);
+                }
+                TextBox resultBox = (TextBox)Find(form, "ResultDetails");
+                Assert(resultBox.ClientSize.Height >= resultBox.Font.Height * 10, "results show at least ten text lines");
                 {
                     Assert(((TextBox)Find(form, "FtpFilePath")).Text == "", "empty source before generation");
-                    Assert(Find(form, "FtpSourceKind").Text == "选择文件", "empty source gives concise selection hint");
+                    Assert(Find(form, "FtpBrowseFile").Visible, "empty source offers file selection");
                     Assert(((TextBox)Find(form, "FtpFilePath")).AllowDrop, "FTP supports file drop");
                     ((TextBox)Find(form, "FtpPassword")).Text = "synthetic-test-only";
                     Assert(((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "password masked");
@@ -79,7 +89,7 @@ internal static class UiContractTests
                 string result = Find(form, "ResultDetails").Text;
                 Assert(result.Contains("打包并校验成功") && result.Contains(package) && result.Contains("联合包大小"), "useful result retained");
                 Assert(!result.Contains("包格式") && !result.Contains("包头") && !result.Contains("MD5") && !result.Contains("0x"), "format internals removed from success report");
-                Assert(!Find(form, "FtpSourceKind").Text.Contains("V1"), "FTP mode has no format version");
+
                 Assert(((TextBox)Find(form, "FtpFilePath")).Text == package, "generated package is default FTP source");
                 {
                 Type formType = form.GetType();
@@ -88,13 +98,11 @@ internal static class UiContractTests
                 MethodInfo setSource = formType.GetMethod("SetFtpFile", BindingFlags.Instance | BindingFlags.NonPublic);
                 setSource.Invoke(form, new object[] { ordinary, false });
                 Assert(((TextBox)Find(form, "FtpFilePath")).Text == ordinary && !(bool)packageMode.GetValue(form), "ordinary source switches upload mode");
-                Assert(Find(form, "FtpSourceKind").Text == "本地文件", "ordinary mode visibly disclosed");
-                LinkLabel usePackage = (LinkLabel)Find(form, "FtpUsePackage");
-                typeof(LinkLabel).GetMethod("OnLinkClicked", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(usePackage,
-                    new object[] { new LinkLabelLinkClickedEventArgs(usePackage.Links[0]) });
-                Assert(((TextBox)Find(form, "FtpFilePath")).Text == package && (bool)packageMode.GetValue(form), "return to generated package restores verification mode");
+
+                setSource.Invoke(form, new object[] { package, true });
+                Assert(((TextBox)Find(form, "FtpFilePath")).Text == package && (bool)packageMode.GetValue(form), "generated source restores verification mode");
                     MethodInfo setBusy = formType.GetMethod("SetFtpBusy", BindingFlags.Instance | BindingFlags.NonPublic);
-                    string[] guarded = { "FtpUploadButton", "FtpBrowseFile", "FtpUsePackage", "FtpAddress", "FtpUser", "FtpPassword", "BuildButton" };
+                    string[] guarded = { "FtpUploadButton", "FtpBrowseFile", "FtpAddress", "FtpUser", "FtpPassword", "BuildButton" };
                     setBusy.Invoke(form, new object[] { true });
                     foreach (string name in guarded) Assert(!Find(form, name).Enabled, "busy disables " + name);
                     setBusy.Invoke(form, new object[] { false });
@@ -105,10 +113,40 @@ internal static class UiContractTests
                 Assert(((TextBox)Find(form, "Path_M4")).Text == input && ((TextBox)Find(form, "OutputPath")).Text == package, "FTP roundtrip preserves main window state");
                 ((Button)Find(form, "Clear_M4")).PerformClick();
 
-                preview.PerformClick(); Application.DoEvents();
+                Application.DoEvents();
+                Assert(grid.Rows.Count == 0, "clearing final module removes preview row");
                 Directory.CreateDirectory(args[1]);
                 using (Bitmap image = new Bitmap(form.Width, form.Height))
                 { form.DrawToBitmap(image, new Rectangle(Point.Empty, form.Size)); image.Save(Path.Combine(args[1], "form-render.png")); }
+                int selected = 0;
+                foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
+                {
+                    string path = Path.Combine(work, type + "-five.bin");
+                    File.WriteAllBytes(path, new byte[17 + selected]);
+                    ((TextBox)Find(form, "Path_" + type)).Text = path;
+                    ((TextBox)Find(form, "Version_" + type)).Text = "V000B01D15";
+                    selected++;
+                    Assert(grid.Rows.Count == selected, "dynamic preview selected count " + selected);
+                }
+                string fivePackage = Path.Combine(work, "five-" + Guid.NewGuid().ToString("N") + ".bin");
+                ((TextBox)Find(form, "OutputPath")).Text = fivePackage;
+                ((Button)Find(form, "BuildButton")).PerformClick();
+                Application.DoEvents();
+                Assert(File.Exists(fivePackage), "five file fixture generated");
+                Assert(grid.Visible && grid.Rows.Count == 5 && grid.DisplayedRowCount(false) >= 5, "all five rows fully displayed");
+                Assert(resultBox.Text.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Length <= 10, "five-file report within ten lines");
+                using (Bitmap image = new Bitmap(form.Width, form.Height))
+                { form.DrawToBitmap(image, new Rectangle(Point.Empty, form.Size)); image.Save(Path.Combine(work, "five-files-render.png")); }
+                using (Font enlarged = new Font(grid.Font.FontFamily, grid.Font.Size * 1.25F, grid.Font.Style))
+                {
+                    Font original = grid.Font; grid.Font = enlarged; Application.DoEvents();
+                    foreach (DataGridViewRow row in grid.Rows)
+                        Assert(row.Height >= enlarged.Height + 4, "preview row fits 125 percent text");
+                    Assert(grid.DisplayedRowCount(false) >= 5, "all five rows visible at 125 percent text");
+                    using (Bitmap image = new Bitmap(form.Width, form.Height))
+                    { form.DrawToBitmap(image, new Rectangle(Point.Empty, form.Size)); image.Save(Path.Combine(work, "five-files-125-text.png")); }
+                    grid.Font = original;
+                }
                 form.Close();
             }
             Console.WriteLine("PASS UI contract assertions=" + assertions + " (not native interactive GUI validation)"); return 0;
