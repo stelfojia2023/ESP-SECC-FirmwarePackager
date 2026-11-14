@@ -13,14 +13,38 @@ namespace SeccFirmwarePackager
 {
     internal static class UiColors
     {
-        public static readonly Color Canvas = Color.FromArgb(242, 241, 237);
-        public static readonly Color Card = Color.FromArgb(251, 250, 247);
-        public static readonly Color Field = Color.FromArgb(246, 245, 241);
-        public static readonly Color Ink = Color.FromArgb(48, 51, 48);
-        public static readonly Color Muted = Color.FromArgb(112, 114, 107);
-        public static readonly Color Blue = Color.FromArgb(77, 105, 87);
-        public static readonly Color SoftBlue = Color.FromArgb(232, 237, 229);
-        public static readonly Color Border = Color.FromArgb(221, 222, 214);
+        // Authoritative appearance tokens. See docs/视觉规范.md.
+        public static readonly Color Canvas = ColorTranslator.FromHtml("#EEEFF1");
+        public static readonly Color Card = ColorTranslator.FromHtml("#F7F8FA");
+        public static readonly Color CardTop = ColorTranslator.FromHtml("#FFFFFF");
+        public static readonly Color CardBottom = ColorTranslator.FromHtml("#ECEEF1");
+        public static readonly Color Field = ColorTranslator.FromHtml("#F0F1F3");
+        public static readonly Color Ink = ColorTranslator.FromHtml("#30363C");
+        public static readonly Color Muted = ColorTranslator.FromHtml("#626A73");
+        public static readonly Color Blue = ColorTranslator.FromHtml("#506575");
+        public static readonly Color SoftBlue = ColorTranslator.FromHtml("#E3E9E8");
+        public static readonly Color Border = ColorTranslator.FromHtml("#B9BEC5");
+        public static readonly Color ButtonPrimary = ColorTranslator.FromHtml("#DEE6E2");
+        public static readonly Color ButtonSecondary = ColorTranslator.FromHtml("#E7E9ED");
+        public static readonly Color ButtonIcon = ColorTranslator.FromHtml("#F5F6F8");
+        public static readonly Color ButtonDisabledTint = Color.FromArgb(235, 236, 238);
+        public static readonly Color ButtonShadeTint = Color.FromArgb(100, 107, 114);
+        public static readonly Color ButtonShadow = Color.FromArgb(61, 67, 74);
+        public static readonly Color ButtonHighlight = Color.White;
+        public static readonly Color SurfaceShadow = Color.FromArgb(22, 45, 52, 64);
+        public static readonly Color SurfaceHighlight = Color.FromArgb(215, 255, 255, 255);
+        public static readonly Color FieldInset = Color.FromArgb(25, 45, 52, 64);
+        public static readonly Color Error = ColorTranslator.FromHtml("#B53239");
+        public static readonly Color Success = ColorTranslator.FromHtml("#1D7858");
+    }
+
+    // Drawing units are device pixels; layout dimensions remain WinForms logical units.
+    internal static class UiSurfaceMetrics
+    {
+        public const float CardArcDiameter = 22F;
+        public const float CardShadowX = 1F, CardShadowY = 3F;
+        public const float FieldArcDiameter = 9F;
+        public const float FieldBorder = 1F, FieldFocusBorder = 1.5F;
     }
 
     internal sealed class SectionCard : Panel
@@ -39,7 +63,7 @@ namespace SeccFirmwarePackager
             if (Width < 4 || Height < 4) return;
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             RectangleF r = new RectangleF(1.5F, 1.5F, Width - 6F, Height - 7F);
-            const float d = 22F;
+            float d = Math.Min(UiSurfaceMetrics.CardArcDiameter, Math.Min(r.Width, r.Height));
             using (GraphicsPath path = new GraphicsPath())
             {
                 path.AddArc(r.Left, r.Top, d, d, 180, 90);
@@ -50,10 +74,12 @@ namespace SeccFirmwarePackager
                 using (System.Drawing.Drawing2D.Matrix shift = new System.Drawing.Drawing2D.Matrix())
                 using (GraphicsPath shadow = (GraphicsPath)path.Clone())
                 {
-                    shift.Translate(1, 3); shadow.Transform(shift);
-                    using (Brush shade = new SolidBrush(Color.FromArgb(18, 74, 72, 62))) e.Graphics.FillPath(shade, shadow);
+                    shift.Translate(UiSurfaceMetrics.CardShadowX, UiSurfaceMetrics.CardShadowY); shadow.Transform(shift);
+                    using (Brush shade = new SolidBrush(UiColors.SurfaceShadow)) e.Graphics.FillPath(shade, shadow);
                 }
-                using (Brush fill = new SolidBrush(UiColors.Card)) e.Graphics.FillPath(fill, path);
+                using (Brush fill = new LinearGradientBrush(r, UiColors.CardTop, UiColors.CardBottom, LinearGradientMode.Vertical)) e.Graphics.FillPath(fill, path);
+                using (Pen highlight = new Pen(UiColors.SurfaceHighlight))
+                    e.Graphics.DrawLine(highlight, r.Left + 12, r.Top + 1, r.Right - 12, r.Top + 1);
                 using (Pen border = new Pen(UiColors.Border)) e.Graphics.DrawPath(border, path);
             }
         }
@@ -86,7 +112,7 @@ namespace SeccFirmwarePackager
             if (Width < 4 || Height < 4) return;
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             RectangleF r = new RectangleF(0.5F, 0.5F, Width - 2F, Height - 2F);
-            const float d = 9F;
+            float d = Math.Min(UiSurfaceMetrics.FieldArcDiameter, Math.Min(r.Width, r.Height));
             using (GraphicsPath path = new GraphicsPath())
             {
                 path.AddArc(r.Left, r.Top, d, d, 180, 90);
@@ -94,7 +120,9 @@ namespace SeccFirmwarePackager
                 path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
                 path.AddArc(r.Left, r.Bottom - d, d, d, 90, 90);
                 path.CloseFigure();
-                using (Pen border = new Pen(input.Focused ? UiColors.Blue : UiColors.Border))
+                using (Pen inset = new Pen(UiColors.FieldInset))
+                    e.Graphics.DrawLine(inset, r.Left + 5, r.Top + 1, r.Right - 5, r.Top + 1);
+                using (Pen border = new Pen(input.Focused ? UiColors.Blue : UiColors.Border, input.Focused ? UiSurfaceMetrics.FieldFocusBorder : UiSurfaceMetrics.FieldBorder))
                     e.Graphics.DrawPath(border, path);
             }
         }
@@ -240,7 +268,7 @@ namespace SeccFirmwarePackager
             Button help = new RaisedButton();
             PreparePageTab(help, "HelpButton", "! 操作说明");
             help.Size = new Size(130, 40); help.AccessibleName = "操作说明";
-            help.BackColor = Color.FromArgb(240, 238, 232);
+            help.BackColor = UiColors.ButtonSecondary;
             help.Click += delegate { ShowHelp(); }; tooltips.SetToolTip(help, "操作说明");
             TableLayoutPanel root = new TableLayoutPanel { Name = "MainPages", Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty, BackColor = UiColors.Canvas };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -275,12 +303,12 @@ namespace SeccFirmwarePackager
                 AddRow(staging, types[i], 1);
                 Control[] c = new Control[7]; for (int n = 0; n < 7; n++) c[n] = staging.GetControlFromPosition(n, 1);
                 SectionCard card = new SectionCard { Name = "FirmwareCard_" + types[i], Dock = DockStyle.Fill, Margin = new Padding(0, 0, 8, 6), Padding = new Padding(12, 8, 12, 10) };
-                TableLayoutPanel item = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 2, Margin = Padding.Empty, BackColor = UiColors.Card };
+                TableLayoutPanel item = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 2, Margin = Padding.Empty, BackColor = Color.Transparent };
                 item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94));
                 item.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); item.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
                 item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
                 item.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); item.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-                c[0].Font = new Font(Font.FontFamily, 12F, FontStyle.Bold); c[0].BackColor = UiColors.Card; c[0].ForeColor = UiColors.Blue;
+                c[0].Font = new Font(Font.FontFamily, 12F, FontStyle.Bold); c[0].BackColor = Color.Transparent; c[0].ForeColor = UiColors.Blue;
                 item.Controls.Add(c[0], 0, 0); item.SetRowSpan(c[0], 2);
                 item.Controls.Add(c[1], 1, 0); item.SetColumnSpan(c[1], 2);
                 item.Controls.Add(c[2], 3, 0); item.Controls.Add(c[3], 3, 1);
@@ -394,8 +422,8 @@ namespace SeccFirmwarePackager
             }
             pageInitialized = true; showingUpgradePage = show;
             packageScroll.Visible = !show; upgradeScroll.Visible = show;
-            packageTab.BackColor = show ? Color.FromArgb(240, 238, 232) : Color.FromArgb(219, 230, 214);
-            upgradeTab.BackColor = show ? Color.FromArgb(219, 230, 214) : Color.FromArgb(240, 238, 232);
+            packageTab.BackColor = show ? UiColors.ButtonSecondary : UiColors.ButtonPrimary;
+            upgradeTab.BackColor = show ? UiColors.ButtonPrimary : UiColors.ButtonSecondary;
             packageTab.Font = show ? pageTabFont : pageTabSelectedFont;
             upgradeTab.Font = show ? pageTabSelectedFont : pageTabFont;
         }
@@ -407,7 +435,7 @@ namespace SeccFirmwarePackager
         private static Control RightActions(params Button[] buttons)
         {
             // Keep action buttons compact and aligned across the three cards.
-            TableLayoutPanel p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty, BackColor = UiColors.Card };
+            TableLayoutPanel p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty, BackColor = Color.Transparent };
             p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             p.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 186));
             p.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 186)); p.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -468,7 +496,7 @@ namespace SeccFirmwarePackager
             TableLayoutPanel layout = new TableLayoutPanel();
             layout.Dock = DockStyle.Fill;
             layout.Margin = Padding.Empty;
-            layout.BackColor = UiColors.Card;
+            layout.BackColor = Color.Transparent;
             layout.ColumnCount = 1;
             layout.RowCount = rows;
             return layout;
@@ -489,7 +517,7 @@ namespace SeccFirmwarePackager
             button.Margin = new Padding(3, 3, 3, 3);
             button.Font = new Font("Microsoft YaHei UI", 9F, primary ? FontStyle.Bold : FontStyle.Regular);
             button.FlatAppearance.BorderSize = 0;
-            button.BackColor = primary ? Color.FromArgb(219, 230, 214) : (subtle ? Color.White : Color.FromArgb(238, 234, 242));
+            button.BackColor = primary ? UiColors.ButtonPrimary : (subtle ? UiColors.ButtonIcon : UiColors.ButtonSecondary);
             button.ForeColor = subtle ? UiColors.Muted : UiColors.Ink;
             button.Click -= PlayClickSound;
             button.Click += PlayClickSound;
@@ -622,7 +650,7 @@ namespace SeccFirmwarePackager
 
         private void ShowInputResult(string message, bool error)
         {
-            AppendResult(message, error ? Color.FromArgb(181, 50, 57) : UiColors.Ink);
+            AppendResult(message, error ? UiColors.Error : UiColors.Ink);
         }
 
         private void AppendResult(string message, Color color)
@@ -859,7 +887,7 @@ namespace SeccFirmwarePackager
             int rowPixels = 0; foreach (DataGridViewRow visibleRow in grid.Rows) rowPixels += visibleRow.Height;
             workspace.RowStyles[1].Height = grid.Rows.Count == 0 ? 0 : previewCard.Margin.Vertical + previewCard.Padding.Vertical + rowPixels + SystemInformation.HorizontalScrollBarHeight + 6;
             status.Text = problem == null ? "" : "未就绪：" + problem;
-            status.ForeColor = problem == null ? UiColors.Muted : Color.FromArgb(181, 50, 57);
+            status.ForeColor = problem == null ? UiColors.Muted : UiColors.Error;
             if (plan != null && plan.Warnings.Count > 0) status.Text = String.Join("\r\n", plan.Warnings.ToArray());
             if (!loadingFolder && !String.IsNullOrEmpty(status.Text) && status.Text != lastPreviewMessage)
                 AppendResult(status.Text, status.ForeColor);
@@ -904,7 +932,7 @@ namespace SeccFirmwarePackager
             catch (InvalidDataException ex)
             {
                 if (raw != null && raw.IndexOf('@') >= 0) ftpAddress.Clear();
-                ReportFtp(ex.Message, Color.FromArgb(181, 50, 57));
+                ReportFtp(ex.Message, UiColors.Error);
                 if (showErrors) MessageBox.Show(this, ex.Message, "FTP 地址无效", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return false;
             }
@@ -930,7 +958,7 @@ namespace SeccFirmwarePackager
             catch (InvalidDataException ex)
             {
                 sounds.Play("failure");
-                ReportFtp("上传失败：" + ex.Message, Color.FromArgb(181, 50, 57));
+                ReportFtp("上传失败：" + ex.Message, UiColors.Error);
                 MessageBox.Show(this, ex.Message, "上传失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -940,7 +968,7 @@ namespace SeccFirmwarePackager
             if (ftpBusy || !ApplyFtpAddress(ftpAddress.Text, true)) return;
             if (String.IsNullOrWhiteSpace(ftpUser.Text))
             {
-                ReportFtp("打开 FTP 目录失败：请输入 FTP 用户名。", Color.FromArgb(181, 50, 57));
+                ReportFtp("打开 FTP 目录失败：请输入 FTP 用户名。", UiColors.Error);
                 MessageBox.Show(this, "请输入 FTP 用户名。", "打开 FTP 目录失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
@@ -966,13 +994,13 @@ namespace SeccFirmwarePackager
                         SetFtpBusy(false);
                         if (result != null)
                         {
-                            ReportFtp("目录读取成功：共 " + result.Entries.Length + " 个条目。", Color.FromArgb(29, 120, 88));
+                            ReportFtp("目录读取成功：共 " + result.Entries.Length + " 个条目。", UiColors.Success);
                             using (FtpDirectoryViewer viewer = new FtpDirectoryViewer(result, localName)) viewer.ShowDialog(this);
                         }
                         else
                         {
                             sounds.Play("failure");
-                            ReportFtp("打开 FTP 目录失败：" + error, Color.FromArgb(181, 50, 57));
+                            ReportFtp("打开 FTP 目录失败：" + error, UiColors.Error);
                             MessageBox.Show(this, error, "打开 FTP 目录失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
                     }));
@@ -1008,13 +1036,13 @@ namespace SeccFirmwarePackager
                         if (result != null)
                         {
                             sounds.Play("success");
-                            ReportFtp("上传成功：" + Path.GetFileName(path) + "，FTP 服务器已确认接收（" + result.StatusCode + "），共 " + result.Bytes.ToString("N0") + " 字节。", Color.FromArgb(29, 120, 88));
+                            ReportFtp("上传成功：" + Path.GetFileName(path) + "，FTP 服务器已确认接收（" + result.StatusCode + "），共 " + result.Bytes.ToString("N0") + " 字节。", UiColors.Success);
                             tooltips.SetToolTip(ftpStatus, result.RemoteUrl);
                         }
                         else
                         {
                             sounds.Play("failure");
-                            ReportFtp("上传失败：" + Path.GetFileName(path) + "，" + error + " 服务器上可能留有不完整文件。", Color.FromArgb(181, 50, 57));
+                            ReportFtp("上传失败：" + Path.GetFileName(path) + "，" + error + " 服务器上可能留有不完整文件。", UiColors.Error);
                             tooltips.SetToolTip(ftpStatus, ftpStatus.Text);
                         }
                     }));
@@ -1110,4 +1138,5 @@ namespace SeccFirmwarePackager
         }
     }
 }
+
 
