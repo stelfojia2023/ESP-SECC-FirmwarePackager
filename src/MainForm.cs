@@ -369,7 +369,7 @@ namespace SeccFirmwarePackager
             ftpAddress.Text = "";
             ftpUser.Text = "";
             ftpPassword.Text = "";
-            ftpAuthority = FtpUploader.ParseAddress(ftpAddress.Text).DirectoryUri.GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped);
+            ftpAuthority = ""; // No server has been selected at startup.
             ftp.Controls.Add(LabeledLine("URL", new SoftField(ftpAddress, false) { Dock = DockStyle.Fill }), 0, 1);
             ftp.Controls.Add(LabeledLine("用户名", new SoftField(ftpUser, false) { Dock = DockStyle.Fill }), 0, 2);
             ftp.Controls.Add(LabeledLine("密码", new SoftField(ftpPassword, false) { Dock = DockStyle.Fill }), 0, 3);
