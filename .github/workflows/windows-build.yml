@@ -23,15 +23,15 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
           New-Item -ItemType Directory -Force evidence/ci | Out-Null
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /out:CoreTests.exe src/Packager.cs tests/CoreTests.cs
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /out:CoreTests.exe (Join-Path $PWD 'src\Packager.cs') (Join-Path $PWD 'tests\CoreTests.cs')
           if ($LASTEXITCODE) { throw 'Core compile failed' }
           & ./CoreTests.exe "$env:RUNNER_TEMP/core-results" 2>&1 | Tee-Object evidence/ci/core.log
           if ($LASTEXITCODE) { throw 'Core tests failed' }
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /main:FtpTests /out:FtpTests.exe src/Packager.cs src/FtpUploader.cs tests/FtpTests.cs
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /main:FtpTests /out:FtpTests.exe (Join-Path $PWD 'src\Packager.cs') (Join-Path $PWD 'src\FtpUploader.cs') (Join-Path $PWD 'tests\FtpTests.cs')
           if ($LASTEXITCODE) { throw 'FTP compile failed' }
           & ./FtpTests.exe test-vectors/bundle-m4-esp32-v1.bin "$env:RUNNER_TEMP/ftp-results" 2>&1 | Tee-Object evidence/ci/ftp.log
           if ($LASTEXITCODE) { throw 'FTP tests failed' }
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:UiContractTests.exe tests/UiContractTests.cs
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /out:UiContractTests.exe (Join-Path $PWD 'tests\UiContractTests.cs')
           if ($LASTEXITCODE) { throw 'UI contract compile failed' }
           & ./UiContractTests.exe dist/FirmwarePackager.exe evidence/ci 2>&1 | Tee-Object evidence/ci/ui-contract.log
           if ($LASTEXITCODE) { throw 'UI contract tests failed' }
