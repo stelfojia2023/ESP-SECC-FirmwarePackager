@@ -467,7 +467,9 @@ namespace SeccFirmwarePackager
                 help.Size = new Size(650, 520); help.MinimumSize = new Size(480, 360); help.BackColor = UiColors.Canvas;
                 TextBox text = new TextBox { Name = "HelpText", Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = UiColors.Canvas, Font = Font };
                 text.Text = "文件与版本\r\n名称为文件名去掉 .bin；版本取下划线后的 V/v 至下一个下划线或点，保留大小写。名称/版本可修改，最多 96/64 个 UTF-8 字节。手动选入缺版本文件后须补填才能生成。\r\n\r\n一键加载\r\n仅扫描当前文件夹；按开头 PFC、LLC、M4、PLC、ESP32 识别 .bin，大小写不敏感。同类唯一且有效才更新；多文件、缺版本或无效项保留原选择并提示。一键清理不删除磁盘文件，不清 FTP 配置和输出位置。\r\n\r\n大小限制\r\n文件不可为空。PFC/LLC：256,000 字节（250 KiB）；M4：524,288 字节（512 KiB）；PLC：2,097,152 字节（2 MiB）；ESP32：2,621,440 字节（2.5 MiB）。整包最多 6,291,456 字节（6 MiB），含包头和对齐。加载和生成都会检查。\r\n\r\nFTP\r\n生成后默认上传该联合包，也可独立选任意本地文件。联合包上传前校验；普通文件不做包格式校验。普通 FTP 明文传输，服务器同名文件可能覆盖，上传前请核对。\r\n\r\n查看包头\r\n生成成功后可查看本次包最前 4096 字节；只读，不改变文件，也不读取后续固件内容。地址范围 0x0000～0x0FFF。";
-                help.Padding = new Padding(20); help.Controls.Add(text); help.ShowDialog(this);
+                help.Padding = new Padding(20); help.Controls.Add(text);
+                help.Shown += delegate { text.Select(0, 0); };
+                help.ShowDialog(this);
             }
         }
 
