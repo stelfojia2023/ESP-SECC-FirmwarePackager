@@ -43,7 +43,7 @@ def read_package(path: Path) -> tuple[bytes, list[dict]]:
         version_text = data[base + 128 : base + 128 + version_len].decode("utf-8", "strict")
         assert not any(data[base + 32 + name_len : base + 128]), path
         assert not any(data[base + 128 + version_len : base + 256]), path
-        assert offset == expected_offset and offset % 4096 == 0 and size > 0, path
+        assert offset == expected_offset and offset % 4096 == 0 and 0 < size <= BUDGETS[kind - 1], path
         end = offset + size
         assert end <= total and digest(data[offset:end]) == file_md5, path
         expected_offset = (end + 4095) // 4096 * 4096
@@ -80,9 +80,19 @@ def check_budget(root: Path) -> None:
     print("PASS independent parser: budget vector 0x57F000 and five original files")
 
 
+def check_hard_limits(root: Path) -> None:
+    for kind, limit in zip(KINDS, BUDGETS):
+        data, entries = read_package(root / f"limit-{kind}.bin")
+        assert len(entries) == 1 and entries[0]["size"] == limit
+        assert not (root / f"rejected-{kind}.bin").exists()
+    print("PASS independent parser: five exact-limit packages, rejected outputs absent")
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         raise SystemExit("Usage: independent_verify.py <Windows core test result directory>")
     test_root = Path(sys.argv[1])
     check_combinations(test_root)
     check_budget(test_root)
+    check_hard_limits(test_root)
+

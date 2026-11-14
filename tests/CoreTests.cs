@@ -190,22 +190,26 @@ internal static class CoreTests
         Assert(Packager.Plan(new[] { goodVersion }).Entries.Count == 1, "exact 64 bytes version accepted");
         FirmwareInput duplicate = Input(0);
         Fails(delegate { Packager.Plan(new[] { duplicate, Input(0) }); }, "重复");
-        string largeEsp = Path.Combine(root, "oversize-esp32.bin"); File.WriteAllBytes(largeEsp, new byte[Packager.MaxEsp32Size + 1]);
-        FirmwareInput esp = Input(4); esp.Path = largeEsp;
-        Fails(delegate { Packager.Plan(new[] { esp }); }, "2.5 MiB");
-        string huge = Path.Combine(root, "oversize-total.bin"); File.WriteAllBytes(huge, new byte[Packager.MaxPackageSize]);
-        FirmwareInput oversized = Input(0); oversized.Path = huge;
-        Fails(delegate { Packager.Plan(new[] { oversized }); }, "6 MiB");
-        int[] advisoryBudgets = { 250 * 1024, 250 * 1024, 512 * 1024, 2 * 1024 * 1024 };
-        for (int i = 0; i < advisoryBudgets.Length; i++)
+        int[] hardLimits = { 250 * 1024, 250 * 1024, 512 * 1024, 2 * 1024 * 1024, 5 * 1024 * 1024 / 2 };
+        for (int i = 0; i < hardLimits.Length; i++)
         {
-            string budgetWarning = Path.Combine(root, Types[i] + "-over-budget.bin");
-            File.WriteAllBytes(budgetWarning, new byte[advisoryBudgets[i] + 1]);
-            FirmwareInput warn = Input(i); warn.Path = budgetWarning;
-            Assert(Packager.Plan(new[] { warn }).Warnings.Count == 1, Types[i] + " individual budget warning");
-            Assert(Packager.Build(new[] { warn }, Path.Combine(root, "allowed-over-budget-" + Types[i] + ".bin")).Warnings.Count == 1,
-                Types[i] + " over budget still buildable");
+            string boundary = Path.Combine(root, Types[i] + "-boundary.bin");
+            FirmwareInput item = Input(i); item.Path = boundary;
+            File.WriteAllBytes(boundary, new byte[0]);
+            Fails(delegate { Packager.Plan(new[] { item }); }, "文件为空");
+            File.WriteAllBytes(boundary, new byte[hardLimits[i]]);
+            Assert(Packager.Plan(new[] { item }).Entries[0].Size == hardLimits[i], Types[i] + " exact hard limit accepted");
+            string generated = Path.Combine(root, "limit-" + Types[i] + ".bin");
+            Packager.Build(new[] { item }, generated);
+            Assert(Packager.VerifyFile(generated).Entries[0].Size == hardLimits[i], Types[i] + " boundary build and verify");
+            File.WriteAllBytes(boundary, new byte[hardLimits[i] + 1]);
+            Fails(delegate { Packager.Plan(new[] { item }); }, "上限");
+            string rejected = Path.Combine(root, "rejected-" + Types[i] + ".bin");
+            Fails(delegate { Packager.Build(new[] { item }, rejected); }, "上限");
+            Assert(!File.Exists(rejected), Types[i] + " oversized build leaves no output");
         }
+        Fails(delegate { Packager.VerifyBytes(new byte[Packager.MaxPackageSize + 1]); }, "6 MiB");
+        Console.WriteLine("PASS all five file hard limits: zero rejected, boundary accepted, boundary+1 rejected");
         Fails(delegate { Packager.Build(Inputs(1), Path.Combine(root, "missing", "no.bin")); }, "输出目录不存在");
         Fails(delegate { Packager.Build(Inputs(1), root); }, "目录");
         byte[] before = File.ReadAllBytes(SourcePath(0));
@@ -224,7 +228,7 @@ internal static class CoreTests
         Packager.Build(Inputs(1), existing);
         Assert(Packager.VerifyFile(existing).Entries.Count == 1, "valid build replaces existing output");
         Fails(delegate { Packager.VerifyFile(Path.Combine(root, "不存在.bin")); }, "不可读取");
-        Console.WriteLine("PASS invalid input, limits, budget warning, safe output and UTF-8 limits");
+        Console.WriteLine("PASS invalid input, limits, hard file limits, safe output and UTF-8 limits");
     }
 
     public static int Main(string[] args)
@@ -245,3 +249,4 @@ internal static class CoreTests
         catch (Exception e) { Console.Error.WriteLine("FAIL " + e); return 1; }
     }
 }
+

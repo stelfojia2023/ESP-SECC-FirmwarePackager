@@ -155,6 +155,8 @@ namespace SeccFirmwarePackager
         private readonly TextBox ftpFile = new TextBox();
         private readonly Label ftpSourceKind = new Label();
         private string lastGeneratedPackage;
+        private byte[] lastGeneratedHeader;
+        private readonly Button headerView = new RaisedButton();
         private bool ftpPackageSource = true;
         private string ftpAuthority;
         private bool ftpBusy;
@@ -170,11 +172,16 @@ namespace SeccFirmwarePackager
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei UI", 9.5F); AutoScaleMode = AutoScaleMode.Dpi; BackColor = UiColors.Canvas;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
-            Panel scroll = new Panel { Name = "ContentScroll", Dock = DockStyle.Fill, AutoScroll = true }; Controls.Add(scroll);
+            Panel helpStrip = new Panel { Name = "HelpStrip", Dock = DockStyle.Top, Height = 28, BackColor = UiColors.Canvas };
+            Button help = new RaisedButton { Name = "HelpButton", Text = "ⓘ", AccessibleName = "操作说明", Size = new Size(30, 25), Anchor = AnchorStyles.Top | AnchorStyles.Right };
+            help.Location = new Point(ClientSize.Width - 48, 1); helpStrip.Controls.Add(help);
+            help.Click += delegate { ShowHelp(); }; tooltips.SetToolTip(help, "操作说明");
+            Controls.Add(helpStrip);
+            Panel scroll = new Panel { Name = "ContentScroll", Dock = DockStyle.Fill, AutoScroll = true }; Controls.Add(scroll); scroll.BringToFront();
             workspace = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 3,
-                Padding = new Padding(22, 18, 22, 18), Margin = Padding.Empty };
+                Padding = new Padding(18, 14, 18, 14), Margin = Padding.Empty };
             workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55)); workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
-            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 460));
+            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 440));
             workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
             workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 340)); scroll.Controls.Add(workspace);
             TableLayoutPanel inputs = CardLayout(5); inputs.Name = "InputsCard"; inputs.BackColor = UiColors.Canvas;
@@ -186,9 +193,9 @@ namespace SeccFirmwarePackager
                 TableLayoutPanel staging = new TableLayoutPanel { ColumnCount = 7, RowCount = 2 };
                 AddRow(staging, types[i], 1);
                 Control[] c = new Control[7]; for (int n = 0; n < 7; n++) c[n] = staging.GetControlFromPosition(n, 1);
-                SectionCard card = new SectionCard { Name = "FirmwareCard_" + types[i], Dock = DockStyle.Fill, Margin = new Padding(0, 0, 12, 4), Padding = new Padding(14, 10, 14, 12) };
+                SectionCard card = new SectionCard { Name = "FirmwareCard_" + types[i], Dock = DockStyle.Fill, Margin = new Padding(0, 0, 8, 6), Padding = new Padding(12, 8, 12, 10) };
                 TableLayoutPanel item = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 2, Margin = Padding.Empty, BackColor = Color.White };
-                item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 76));
+                item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68));
                 item.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); item.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
                 item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
                 item.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); item.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
@@ -206,17 +213,22 @@ namespace SeccFirmwarePackager
                 card.Controls.Add(item); inputs.Controls.Add(card, 0, i); staging.Dispose();
             }
             TableLayoutPanel right = CardLayout(3); right.BackColor = UiColors.Canvas;
-            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 124)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 124));
+            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 108)); right.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));
             right.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); workspace.Controls.Add(right, 1, 0);
-            SectionCard loadCard = new SectionCard { Name = "AutoLoadCard", Dock = DockStyle.Fill, Margin = new Padding(6, 0, 0, 8) };
+            SectionCard loadCard = new SectionCard { Name = "AutoLoadCard", Dock = DockStyle.Fill, Margin = new Padding(6, 0, 0, 8), Padding = new Padding(12, 8, 12, 10) };
             TableLayoutPanel load = CardLayout(2); load.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); load.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            TextBox folder = new TextBox { Name = "FolderPath", ReadOnly = true, Enabled = false, Text = "一键加载暂未实现，识别规则待确定", AccessibleName = "一键加载暂未实现" };
-            Button folderButton = new RaisedButton { Name = "BrowseFolder", Enabled = false, Dock = DockStyle.Fill };
-            ConfigureIcon(folderButton, "folder", "一键加载暂未实现"); load.Controls.Add(PathLine(folder, folderButton), 0, 0);
-            Button autoLoad = MainButton("AutoLoadButton", "一键加载", true); autoLoad.Enabled = false;
-            tooltips.SetToolTip(autoLoad, "暂未实现，文件识别规则待确定"); load.Controls.Add(RightActions(autoLoad), 0, 1);
+            TextBox folder = new PlaceholderTextBox { Name = "FolderPath", PlaceholderText = "选择固件文件夹", AccessibleName = "批量加载固件文件夹" };
+            Button folderButton = new RaisedButton { Name = "BrowseFolder", Dock = DockStyle.Fill };
+            ConfigureIcon(folderButton, "folder", "选择固件文件夹"); load.Controls.Add(PathLine(folder, folderButton), 0, 0);
+            Button autoLoad = MainButton("AutoLoadButton", "一键加载", true);
+            Button clearAll = MainButton("ClearAllButton", "一键清理", false);
+            clearAll.Click += delegate { ClearAllInputs(); };
+            folderButton.Click += delegate { ChooseFolder(); };
+            autoLoad.Click += delegate { LoadFolder(folder.Text); };
+            tooltips.SetToolTip(clearAll, "清空固件选择，不删除源文件");
+            load.Controls.Add(RightActions(clearAll, autoLoad), 0, 1);
             loadCard.Controls.Add(load); right.Controls.Add(loadCard, 0, 0);
-            SectionCard packageCard = new SectionCard { Name = "PackageCard", Dock = DockStyle.Fill, Margin = new Padding(6, 0, 0, 8) };
+            SectionCard packageCard = new SectionCard { Name = "PackageCard", Dock = DockStyle.Fill, Margin = new Padding(6, 0, 0, 8), Padding = new Padding(12, 8, 12, 10) };
             TableLayoutPanel package = CardLayout(2); package.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); package.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             output.Name = "OutputPath"; output.AccessibleName = "输出 BIN 文件路径";
             output.TextChanged += delegate { tooltips.SetToolTip(output, output.Text); };
@@ -225,7 +237,7 @@ namespace SeccFirmwarePackager
             build.Name = "BuildButton"; build.Text = "包生成"; SetupMainButton(build, true); build.Click += BuildClicked;
             Button verify = MainButton("OpenVerifyButton", "包校验", false); verify.Click += OpenClicked;
             package.Controls.Add(RightActions(verify, build), 0, 1); packageCard.Controls.Add(package); right.Controls.Add(packageCard, 0, 1);
-            SectionCard ftpCard = new SectionCard { Name = "FtpInlinePanel", Dock = DockStyle.Fill, Margin = new Padding(6, 0, 0, 4) };
+            SectionCard ftpCard = new SectionCard { Name = "FtpInlinePanel", Dock = DockStyle.Fill, Margin = new Padding(6, 0, 0, 6), Padding = new Padding(12, 8, 12, 10) };
             TableLayoutPanel ftp = CardLayout(5);
             for (int i = 0; i < 4; i++) ftp.RowStyles.Add(new RowStyle(SizeType.Absolute, 32)); ftp.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             ftpFile.Name = "FtpFilePath"; ftpFile.ReadOnly = true; ftpFile.AllowDrop = true; ftpFile.AccessibleName = "FTP 上传文件";
@@ -261,7 +273,12 @@ namespace SeccFirmwarePackager
             previewCard.Controls.Add(grid); workspace.Controls.Add(previewCard, 0, 1); workspace.SetColumnSpan(previewCard, 2);
             SectionCard result = new SectionCard { Name = "OperationResultCard", Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
             TableLayoutPanel resultBody = CardLayout(2); resultBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); resultBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            resultBody.Controls.Add(TitleLabel("操作结果"), 0, 0);
+            TableLayoutPanel resultHeading = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty, BackColor = Color.White };
+            resultHeading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); resultHeading.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
+            resultHeading.Controls.Add(TitleLabel("操作结果"), 0, 0);
+            headerView.Name = "HeaderViewButton"; headerView.Text = "查看包头"; headerView.Enabled = false; headerView.Dock = DockStyle.Fill; headerView.Margin = Padding.Empty;
+            StyleButton(headerView, false, true); headerView.Click += delegate { ShowGeneratedHeader(); };
+            resultHeading.Controls.Add(headerView, 1, 0); resultBody.Controls.Add(resultHeading, 0, 0);
             details.Name = "ResultDetails"; details.Multiline = true; details.ReadOnly = true; details.ScrollBars = ScrollBars.Both;
             details.WordWrap = false; details.Text = "";
             resultBody.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill }, 0, 1); result.Controls.Add(resultBody);
@@ -275,9 +292,17 @@ namespace SeccFirmwarePackager
         { StyleButton(b, primary, false); b.Size = new Size(180, 40); b.Anchor = AnchorStyles.Right | AnchorStyles.Top; }
         private static Control RightActions(params Button[] buttons)
         {
-            TableLayoutPanel p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = buttons.Length + 1, RowCount = 1, Margin = Padding.Empty };
-            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); p.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            for (int i = 0; i < buttons.Length; i++) { p.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 188)); p.Controls.Add(buttons[i], i + 1, 0); }
+            // All primary action rows share two equal tracks; a single action occupies
+            // the right track, so upload aligns with load and package generation.
+            TableLayoutPanel p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); p.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            for (int i = 0; i < buttons.Length; i++)
+            {
+                buttons[i].Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
+                buttons[i].Margin = new Padding(3, 5, 3, 3);
+                p.Controls.Add(buttons[i], buttons.Length == 1 ? 1 : i, 0);
+            }
             return p;
         }
         private static Control PathLine(TextBox field, Button browse)
@@ -374,6 +399,14 @@ namespace SeccFirmwarePackager
             table.Controls.Add(label, 0, index);
             row.PathBox = new TextBox();
             row.PathBox.Name = "Path_" + type;
+            row.PathBox.ReadOnly = true;
+            row.PathBox.KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (!e.Control || e.KeyCode != Keys.V) return;
+                e.SuppressKeyPress = true;
+                try { SetInputFile(row, Clipboard.GetText().Trim().Trim('"')); }
+                catch (Exception ex) { ShowInputResult(ex.Message, true); }
+            };
             row.PathBox.AllowDrop = true;
             StyleTextBox(row.PathBox, false);
             row.PathBox.TextChanged += delegate { InputPathChanged(row); };
@@ -426,6 +459,116 @@ namespace SeccFirmwarePackager
             table.Controls.Add(row.SizeLabel, 6, index);
         }
 
+        private void ShowHelp()
+        {
+            using (Form help = new Form())
+            {
+                help.Text = "操作说明"; help.StartPosition = FormStartPosition.CenterParent;
+                help.Size = new Size(650, 520); help.MinimumSize = new Size(480, 360); help.BackColor = UiColors.Canvas;
+                TextBox text = new TextBox { Name = "HelpText", Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = UiColors.Canvas, Font = Font };
+                text.Text = "文件与版本\r\n名称为文件名去掉 .bin；版本取下划线后的 V/v 至下一个下划线或点，保留大小写。名称/版本可修改，最多 96/64 个 UTF-8 字节。手动选入缺版本文件后须补填才能生成。\r\n\r\n一键加载\r\n仅扫描当前文件夹；按开头 PFC、LLC、M4、PLC、ESP32 识别 .bin，大小写不敏感。同类唯一且有效才更新；多文件、缺版本或无效项保留原选择并提示。一键清理不删除磁盘文件，不清 FTP 配置和输出位置。\r\n\r\n大小限制\r\n文件不可为空。PFC/LLC：256,000 字节（250 KiB）；M4：524,288 字节（512 KiB）；PLC：2,097,152 字节（2 MiB）；ESP32：2,621,440 字节（2.5 MiB）。整包最多 6,291,456 字节（6 MiB），含包头和对齐。加载和生成都会检查。\r\n\r\nFTP\r\n生成后默认上传该联合包，也可独立选任意本地文件。联合包上传前校验；普通文件不做包格式校验。普通 FTP 明文传输，服务器同名文件可能覆盖，上传前请核对。\r\n\r\n查看包头\r\n生成成功后可查看本次包最前 4096 字节；只读，不改变文件，也不读取后续固件内容。地址范围 0x0000～0x0FFF。";
+                help.Padding = new Padding(20); help.Controls.Add(text); help.ShowDialog(this);
+            }
+        }
+
+        private byte[] ReadGeneratedHeader()
+        {
+            if (lastGeneratedHeader == null || String.IsNullOrEmpty(lastGeneratedPackage))
+                throw new InvalidDataException("请先成功生成联合包。");
+            byte[] current = HeaderViewer.ReadHeader(lastGeneratedPackage);
+            for (int i = 0; i < current.Length; i++)
+                if (current[i] != lastGeneratedHeader[i]) throw new InvalidDataException("文件包头已发生变化，请重新生成后查看。");
+            return current;
+        }
+
+        private void ShowGeneratedHeader()
+        {
+            try { using (HeaderViewer viewer = new HeaderViewer(ReadGeneratedHeader())) viewer.ShowDialog(this); }
+            catch (Exception ex)
+            {
+                ShowInputResult("查看包头失败：" + ex.Message, true);
+                MessageBox.Show(this, ex.Message, "无法查看包头", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ShowInputResult(string message, bool error)
+        {
+            details.ForeColor = error ? Color.FromArgb(181, 50, 57) : UiColors.Ink;
+            details.Text = message;
+            details.SelectionStart = 0;
+        }
+
+        private void ChooseFolder()
+        {
+            using (FolderBrowserDialog dialog = new FolderBrowserDialog())
+            {
+                dialog.Description = "选择固件所在文件夹（仅扫描当前层）";
+                dialog.ShowNewFolderButton = false;
+                if (dialog.ShowDialog(this) == DialogResult.OK)
+                    Controls.Find("FolderPath", true)[0].Text = dialog.SelectedPath;
+            }
+        }
+
+        private void LoadFolder(string folder)
+        {
+            string[] paths;
+            try
+            {
+                if (String.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+                    throw new InvalidDataException("请选择可读取的固件文件夹。");
+                paths = Directory.GetFiles(folder, "*", SearchOption.TopDirectoryOnly);
+                Array.Sort(paths, StringComparer.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                if (!(ex is InvalidDataException || ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException)) throw;
+                ShowInputResult("加载失败：" + ex.Message, true); return;
+            }
+            Dictionary<FirmwareType, List<string>> groups = new Dictionary<FirmwareType, List<string>>();
+            List<string> messages = new List<string>();
+            bool error = false;
+            foreach (string path in paths)
+            {
+                FirmwareType type; string name, version;
+                if (!FirmwareFileName.TryParse(path, out type, out name, out version)) continue;
+                if (!groups.ContainsKey(type)) groups[type] = new List<string>();
+                groups[type].Add(path);
+            }
+            int loaded = 0;
+            foreach (Row row in rows)
+            {
+                List<string> candidates;
+                if (!groups.TryGetValue(row.Type, out candidates))
+                { messages.Add(row.Type + "：未找到匹配文件，保留原选择。"); continue; }
+                if (candidates.Count != 1)
+                { error = true; messages.Add(row.Type + "：发现 " + candidates.Count + " 个同类文件，未自动选择，保留原选择。"); continue; }
+                FirmwareType type; string name, version;
+                FirmwareFileName.TryParse(candidates[0], out type, out name, out version);
+                if (String.IsNullOrEmpty(version))
+                { error = true; messages.Add(row.Type + "：文件名缺少版本，未加载，保留原选择。"); continue; }
+                try { SetInputFile(row, candidates[0]); loaded++; messages.Add(row.Type + "：已加载 " + name); }
+                catch (Exception ex)
+                {
+                    if (!(ex is InvalidDataException || ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException)) throw;
+                    error = true; messages.Add(row.Type + "：未加载，保留原选择。" + ex.Message);
+                }
+            }
+            ShowInputResult("加载完成：更新 " + loaded + " 项；未匹配或无效项保持不变。" + Environment.NewLine + String.Join(Environment.NewLine, messages.ToArray()), error);
+        }
+
+        private void ClearAllInputs()
+        {
+            changing = true;
+            try
+            {
+                foreach (Row row in rows)
+                { row.PathBox.Clear(); row.NameBox.Clear(); row.VersionBox.Clear(); row.AutoName = null; }
+            }
+            finally { changing = false; }
+            RefreshPreview();
+            ShowInputResult("已清空五类固件选择；磁盘文件、FTP 配置和输出位置均未改变。", false);
+        }
+
         private void SelectInput(Row row)
         {
             using (OpenFileDialog dialog = new OpenFileDialog())
@@ -436,7 +579,7 @@ namespace SeccFirmwarePackager
                 dialog.Multiselect = false;
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 try { SetInputFile(row, dialog.FileName); }
-                catch (Exception ex) { MessageBox.Show(this, ex.Message, "无法添加固件", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+                catch (Exception ex) { ShowInputResult(ex.Message, true); MessageBox.Show(this, ex.Message, "无法添加固件", MessageBoxButtons.OK, MessageBoxIcon.Error); }
             }
         }
 
@@ -444,11 +587,25 @@ namespace SeccFirmwarePackager
         {
             if (String.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 throw new InvalidDataException(row.Type + " 固件文件不存在或不可读取。");
+            if (!String.Equals(Path.GetExtension(path), ".bin", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("请选择 .bin 固件文件。");
+            FirmwareType detected; string name, version;
+            if (!FirmwareFileName.TryParse(path, out detected, out name, out version))
+            {
+                name = Path.GetFileNameWithoutExtension(path);
+                version = FirmwareFileName.VersionFromName(name);
+            }
+            else if (detected != row.Type)
+                throw new InvalidDataException("文件名类型为 " + detected + "，不能加载到 " + row.Type + " 栏。");
+            // Reuse the package's UTF-8, empty-file and size protections before changing UI state.
+            // Missing manual versions remain genuinely empty and must be filled before generating.
+            Packager.Plan(new FirmwareInput[] { new FirmwareInput { Type = row.Type, Path = path, Name = name, Version = String.IsNullOrEmpty(version) ? "待填写" : version } });
             changing = true;
             try
             {
                 row.PathBox.Text = path;
-                row.NameBox.Text = Path.GetFileName(path);
+                row.NameBox.Text = name;
+                row.VersionBox.Text = version;
                 row.AutoName = row.NameBox.Text;
             }
             finally { changing = false; }
@@ -477,7 +634,7 @@ namespace SeccFirmwarePackager
                 return;
             }
             try { SetInputFile(row, files[0]); }
-            catch (Exception ex) { MessageBox.Show(this, ex.Message, "无法添加固件", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception ex) { ShowInputResult(ex.Message, true); MessageBox.Show(this, ex.Message, "无法添加固件", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         }
 
         private void InputPathChanged(Row row)
@@ -710,7 +867,11 @@ namespace SeccFirmwarePackager
                     if (answer != DialogResult.Yes) return;
                 }
                 PackageReport report = Packager.Build(Inputs(), output.Text);
-                lastGeneratedPackage = Path.GetFullPath(output.Text);
+                string generatedPath = Path.GetFullPath(output.Text);
+                byte[] generatedHeader = HeaderViewer.ReadHeader(generatedPath);
+                lastGeneratedPackage = generatedPath;
+                lastGeneratedHeader = generatedHeader;
+                headerView.Enabled = true;
                 SetFtpFile(lastGeneratedPackage, true);
                 ShowReport("打包并校验成功", lastGeneratedPackage, report);
             }

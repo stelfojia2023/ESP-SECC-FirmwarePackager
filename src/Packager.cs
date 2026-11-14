@@ -90,10 +90,8 @@ namespace SeccFirmwarePackager
         private static void AddBudgetWarning(PackageReport report, FirmwareType type, long size)
         {
             int budget = Budget(type);
-            if (type == FirmwareType.ESP32 && size > budget)
-                throw new InvalidDataException("ESP32 原始固件超过候选应用槽上限 2.5 MiB，不能打包。");
-            if (type != FirmwareType.ESP32 && size > budget)
-                report.Warnings.Add(String.Format("{0} 原始固件 {1} 字节超过建议预算 {2} 字节；总包满足限制时仍允许打包。", type, size, budget));
+            if (size > budget)
+                throw new InvalidDataException(String.Format("{0} 固件实际大小 {1:N0} 字节，超过本类型上限 {2:N0} 字节，不能加载或打包。", type, size, budget));
         }
 
         public static PackageReport Plan(IEnumerable<FirmwareInput> inputs)
@@ -413,3 +411,4 @@ namespace SeccFirmwarePackager
         }
     }
 }
+

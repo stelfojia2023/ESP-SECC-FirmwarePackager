@@ -166,8 +166,8 @@ internal static class GuiSmokeTests
                             throw new Exception("Preview must start empty and inline FTP visible");
                         if (form.Controls.Find("PreviewToggle", true).Length != 0 || form.Controls.Find("FtpUsePackage", true).Length != 0)
                             throw new Exception("Obsolete detail toggle or package shortcut remains");
-                        if (Find<Button>(form, "AutoLoadButton").Enabled)
-                            throw new Exception("Automatic loading is not implemented and must remain disabled");
+                        if (!Find<Button>(form, "AutoLoadButton").Enabled)
+                            throw new Exception("Automatic loading must be available");
                         if (Find<TextBox>(form, "FtpFilePath").Text != "")
                             throw new Exception("FTP source before generation must be empty");
                         Application.DoEvents();
@@ -180,7 +180,7 @@ internal static class GuiSmokeTests
                         }
                         File.WriteAllBytes(input, new byte[] { 1, 2, 3, 4, 5 });
                         TextBox pathBox = Find<TextBox>(form, "Path_M4");
-                        if (!pathBox.AllowDrop || pathBox.ReadOnly) throw new Exception("Path box must allow drag and manual entry");
+                        if (!pathBox.AllowDrop || !pathBox.ReadOnly) throw new Exception("Path box must allow drag and prevent unvalidated typing");
                         if (SendDrag(pathBox, "OnDragEnter", new[] { input }).Effect != DragDropEffects.Copy)
                             throw new Exception("Single file was not accepted for drag");
                         if (SendDrag(pathBox, "OnDragEnter", new[] { input, input }).Effect != DragDropEffects.None)
@@ -188,7 +188,7 @@ internal static class GuiSmokeTests
                         if (!pathBox.Parent.AllowDrop || SendDrag(pathBox.Parent, "OnDragEnter", new[] { input }).Effect != DragDropEffects.Copy)
                             throw new Exception("The entire path field must accept a file drop");
                         SendDrag(pathBox, "OnDragDrop", new[] { input });
-                        if (pathBox.Text != input || Find<TextBox>(form, "Name_M4").Text != Path.GetFileName(input))
+                        if (pathBox.Text != input || Find<TextBox>(form, "Name_M4").Text != Path.GetFileNameWithoutExtension(input))
                             throw new Exception("Drop did not populate path and default name");
                         string second = Path.Combine(workDir, "另一个 固件.bin");
                         File.WriteAllBytes(second, new byte[] { 6, 7, 8 });
@@ -215,18 +215,14 @@ internal static class GuiSmokeTests
                         if (Packager.VerifyFile(output).Entries.Count != 1) throw new Exception("GUI package invalid");
                         Find<Button>(form, "Clear_M4").PerformClick();
                         if (preview.Rows.Count != 0 || preview.Visible) throw new Exception("Cleared preview must hide without empty rows");
-                        string overBudget = Path.Combine(workDir, "PFC 超预算.bin");
-                        string warningOutput = Path.Combine(workDir, "允许超预算.bin");
+                        string overBudget = Path.Combine(workDir, "PFC 超限.bin");
                         File.WriteAllBytes(overBudget, new byte[250 * 1024 + 1]);
+                        // Bypass the read-only control programmatically to exercise final Plan guard.
                         Find<TextBox>(form, "Path_PFC").Text = overBudget;
-                        Find<TextBox>(form, "Name_PFC").Text = "PFC 超预算.bin";
+                        Find<TextBox>(form, "Name_PFC").Text = "PFC 超限";
                         Find<TextBox>(form, "Version_PFC").Text = "V000B01D15";
-                        Find<TextBox>(form, "OutputPath").Text = warningOutput;
-                        if (!Find<TextBox>(form, "ResultDetails").Text.Contains("超过建议预算"))
-                            throw new Exception("Over-budget advisory not shown in preview");
-                        Find<Button>(form, "BuildButton").PerformClick();
-                        if (!File.Exists(warningOutput) || Packager.VerifyFile(warningOutput).Warnings.Count != 1)
-                            throw new Exception("Advisory over-budget firmware should remain buildable");
+                        if (!Find<TextBox>(form, "ResultDetails").Text.Contains("上限"))
+                            throw new Exception("Oversized file rejection must be visible before generation");
                         form.Refresh();
                         Application.DoEvents();
                         using (Bitmap picture = new Bitmap(form.Width, form.Height))
@@ -285,7 +281,7 @@ internal static class GuiSmokeTests
                         Rectangle button = buildButton.RectangleToScreen(buildButton.ClientRectangle);
                         if (button.Top < view.Top || button.Bottom > view.Bottom)
                             throw new Exception("Build button is not reachable in the small window");
-                        Console.WriteLine("PASS visible WinForms UI: button text spacing at default and minimum sizes, 125 percent font metrics, drag handlers, manual input, five-file preview, generate, verify, budget warning and small window");
+                        Console.WriteLine("PASS visible WinForms UI: button text spacing at default and minimum sizes, 125 percent font metrics, drag handlers, manual input, five-file preview, generate, verify, hard-limit rejection and small window");
                         result = 0;
                     }
                     catch (Exception ex) { Console.Error.WriteLine("FAIL GUI " + ex); result = 1; }

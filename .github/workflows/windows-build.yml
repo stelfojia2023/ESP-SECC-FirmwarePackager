@@ -23,6 +23,14 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
           New-Item -ItemType Directory -Force evidence/ci | Out-Null
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /out:FilenameRulesTests.exe (Join-Path $PWD 'src\Packager.cs') (Join-Path $PWD 'src\FilenameRules.cs') (Join-Path $PWD 'tests\FilenameRulesTests.cs')
+          if ($LASTEXITCODE) { throw 'Filename compile failed' }
+          & ./FilenameRulesTests.exe 2>&1 | Tee-Object evidence/ci/filename.log
+          if ($LASTEXITCODE) { throw 'Filename tests failed' }
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:HeaderViewerTests /out:HeaderViewerTests.exe (Get-ChildItem src/*.cs | ForEach-Object { $_.FullName }) (Join-Path $PWD 'tests\HeaderViewerTests.cs')
+          if ($LASTEXITCODE) { throw 'Header viewer compile failed' }
+          & ./HeaderViewerTests.exe evidence/ci/header 2>&1 | Tee-Object evidence/ci/header-viewer.log
+          if ($LASTEXITCODE) { throw 'Header viewer tests failed' }
           & $csc /nologo /codepage:65001 /target:exe /platform:x64 /out:CoreTests.exe (Join-Path $PWD 'src\Packager.cs') (Join-Path $PWD 'tests\CoreTests.cs')
           if ($LASTEXITCODE) { throw 'Core compile failed' }
           & ./CoreTests.exe "$env:RUNNER_TEMP/core-results" 2>&1 | Tee-Object evidence/ci/core.log
