@@ -1,0 +1,7 @@
+App window is not foreground; no desktop capture taken
+Foreground capture unavailable.
+所在位置 C:\Users\zhangyy\AppData\Local\Temp\secc-buttons.PdAaGV\capture-check.ps1:11 字符: 28
++ if ($LASTEXITCODE -ne 0) { throw 'Foreground capture unavailable.' }
++                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (Foreground capture unavailable.:String) [], RuntimeException
+    + FullyQualifiedErrorId : Foreground capture unavailable.

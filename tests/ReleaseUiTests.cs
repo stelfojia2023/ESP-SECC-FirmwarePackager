@@ -299,6 +299,9 @@ internal static class ReleaseUiTests
             uint id = (uint)process.Id;
             Node inlineUpload = Button(root, "上传到 FTP", 0);
             if (!IsWindowVisible(inlineUpload.Handle)) throw new Exception("FTP upload must be visible inline on startup.");
+            foreach (Node child in Children(root))
+                if (IsClass(child, "BUTTON") && child.Text == "包校验")
+                    throw new Exception("Standalone package verification button must be removed.");
             Click(Button(root, "ⓘ", 0).Handle);
             DismissError(id, "操作说明", "文件与版本");
             Node browseM4 = Button(root, "选择 M4 固件", 0);
@@ -327,30 +330,24 @@ internal static class ReleaseUiTests
             if (Packager.VerifyFile(output).Entries.Count != 1) throw new Exception("GUI-generated package is invalid.");
             Click(Button(root, "查看包头", 0).Handle);
             DismissError(id, "联合包包头 · 4096 字节", "SECCPKG1");
-            Click(Button(root, "包校验", 0).Handle);
-            ChooseFile(id, "打开并校验联合固件包", output);
-            WaitUntil(delegate { return ContainsText(root, "校验通过"); }, "Open and verify did not display success.");
             if (args.Length == 3)
             {
                 string previous = Path.GetFullPath(args[2]);
                 if (!File.Exists(previous)) throw new Exception("Previous V1 sample not found.");
-                Click(Button(root, "包校验", 0).Handle);
-                ChooseFile(id, "打开并校验联合固件包", previous);
-                WaitUntil(delegate { return ContainsText(root, Path.GetFileName(previous)) && ContainsText(root, "校验通过"); }, "Previous V1 sample did not verify in the GUI.");
                 if (Packager.VerifyFile(previous).Entries.Count != 2) throw new Exception("Previous V1 sample has unexpected contents.");
             }
             byte[] corrupt = File.ReadAllBytes(output);
             corrupt[4096] ^= 1;
             string corruptPath = Path.Combine(work, "损坏 联合 包.bin");
             File.WriteAllBytes(corruptPath, corrupt);
-            Click(Button(root, "包校验", 0).Handle);
-            ChooseFile(id, "打开并校验联合固件包", corruptPath);
-            DismissError(id, "校验失败", "固件 MD5");
-            if (!ContainsText(root, "校验失败")) throw new Exception("Verification failure was not displayed in the result area.");
+            bool rejected = false;
+            try { Packager.VerifyFile(corruptPath); }
+            catch (InvalidDataException) { rejected = true; }
+            if (!rejected) throw new Exception("Core validation did not reject corrupted package.");
             process.CloseMainWindow();
             if (!process.WaitForExit(10000)) throw new Exception("Release window did not close.");
             if (process.ExitCode != 0) throw new Exception("Release returned nonzero exit code.");
-            Console.WriteLine("PASS delivered EXE: help, native file drag, browse, default name, missing-version error, save, generate, header dialog, open, verify" + (args.Length == 3 ? ", previous V1 sample" : "") + " and corrupted-file error");
+            Console.WriteLine("PASS delivered EXE: help, native file drag, browse, default name, missing-version error, save, generate, header dialog; core rejects corruption" + (args.Length == 3 ? " and validates prior sample" : ""));
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL release UI " + ex); return 1; }

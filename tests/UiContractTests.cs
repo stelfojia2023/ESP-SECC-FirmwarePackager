@@ -46,13 +46,20 @@ internal static class UiContractTests
             Assert(type.ClientSize.Width >= larger.Width + 4, "ESP32 has room for enlarged text");
         }
         int buttonWidth = Find(form, "AutoLoadButton").Width;
-        foreach (string name in new[] { "AutoLoadButton", "ClearAllButton", "OpenVerifyButton", "BuildButton", "FtpUploadButton" })
+        foreach (string name in new[] { "AutoLoadButton", "ClearAllButton", "HeaderViewButton", "BuildButton", "FtpUploadButton" })
         {
             Control button = Find(form, name);
             Size caption = TextRenderer.MeasureText(button.Text, button.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
             Assert(Math.Abs(button.Width - buttonWidth) <= 1 && button.Width <= button.Height * 5, "compact uniform action " + name);
             Assert(button.ClientSize.Width >= caption.Width + 12 && button.Parent.ClientRectangle.Contains(button.Bounds), "action caption and hit area fit " + name);
         }
+        Control header = Find(form, "HeaderViewButton");
+        Control build = Find(form, "BuildButton");
+        Assert(header.Parent == build.Parent && header.Bounds.Top == build.Bounds.Top &&
+            !header.Bounds.IntersectsWith(build.Bounds) && header.Size == build.Size, "header and build share a row and size");
+        Assert(Find(form, "PackageCard").Contains(header) && !Find(form, "OperationResultCard").Contains(header),
+            "header action is inside the package card");
+        Assert(Find(form, "OpenVerifyButton") == null, "standalone package verification button is removed");
         TextBox result = (TextBox)Find(form, "ResultDetails");
         Assert(result.ClientSize.Height >= result.Font.Height * 10, "compact results still show ten lines: actual=" + result.ClientSize.Height + ", required=" + result.Font.Height * 10);
     }
@@ -288,7 +295,7 @@ internal static class UiContractTests
                 Assert(Find(form, "PreviewToggle") == null && Find(form, "FtpUsePackage") == null, "removed detail toggle and package shortcut");
                 Assert(Find(form, "FtpAddress").Visible, "FTP visible initially");
                 Assert(Find(form, "AutoLoadButton").Enabled && Find(form, "FolderPath").Enabled && Find(form, "ClearAllButton").Enabled, "batch loading and clearing enabled");
-                foreach (string name in new[] { "AutoLoadButton", "ClearAllButton", "OpenVerifyButton", "BuildButton", "FtpUploadButton" })
+                foreach (string name in new[] { "AutoLoadButton", "ClearAllButton", "HeaderViewButton", "BuildButton", "FtpUploadButton" })
                     Assert(Find(form, name).Height == 40 && Math.Abs(Find(form, name).Width - Find(form, "AutoLoadButton").Width) <= 1, "uniform primary button " + name + " actual=" + Find(form, name).Size);
                 foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
                 {
@@ -320,11 +327,9 @@ internal static class UiContractTests
                 Assert(File.Exists(package), "fixture package generated");
                 Assert(Find(form, "HeaderViewButton").Enabled, "successful generation enables header viewing");
                 TestHeaderDialog(form);
-                using (Form verificationOnly = (Form)Activator.CreateInstance(form.GetType(), true))
-                {
-                    form.GetType().GetMethod("DisplayVerifiedFile", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).Invoke(verificationOnly, new object[] { package });
-                    Assert(!Find(verificationOnly, "HeaderViewButton").Enabled, "merely verifying a package does not enable generated-header entry");
-                }
+                Assert(form.GetType().GetMethod("OpenClicked", BindingFlags.Instance | BindingFlags.NonPublic) == null &&
+                    form.GetType().GetMethod("DisplayVerifiedFile", BindingFlags.Instance | BindingFlags.NonPublic) == null,
+                    "standalone package verification handler is removed");
                 MethodInfo readGenerated = form.GetType().GetMethod("ReadGeneratedHeader", BindingFlags.Instance | BindingFlags.NonPublic);
                 byte[] generatedBytes = File.ReadAllBytes(package);
                 byte[] snapshot = (byte[])readGenerated.Invoke(form, null);

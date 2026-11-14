@@ -239,8 +239,9 @@ namespace SeccFirmwarePackager
             Button browse = new RaisedButton { Name = "BrowseOutput", Dock = DockStyle.Fill }; ConfigureIcon(browse, "folder", "选择输出位置"); browse.Click += BrowseOutput;
             package.Controls.Add(PathLine(output, browse), 0, 0);
             build.Name = "BuildButton"; build.Text = "包生成"; SetupMainButton(build, true); build.Click += BuildClicked;
-            Button verify = MainButton("OpenVerifyButton", "包校验", false); verify.Click += OpenClicked;
-            package.Controls.Add(RightActions(verify, build), 0, 1); packageCard.Controls.Add(package); right.Controls.Add(packageCard, 0, 1);
+            headerView.Name = "HeaderViewButton"; headerView.Text = "查看包头"; headerView.Enabled = false;
+            SetupMainButton(headerView, false); headerView.Click += delegate { ShowGeneratedHeader(); };
+            package.Controls.Add(RightActions(headerView, build), 0, 1); packageCard.Controls.Add(package); right.Controls.Add(packageCard, 0, 1);
             SectionCard ftpCard = new SectionCard { Name = "FtpInlinePanel", Dock = DockStyle.Fill, Margin = new Padding(6, 0, 0, 6), Padding = new Padding(12, 8, 12, 10) };
             TableLayoutPanel ftp = CardLayout(5);
             for (int i = 0; i < 4; i++) ftp.RowStyles.Add(new RowStyle(SizeType.Absolute, 32)); ftp.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -278,12 +279,7 @@ namespace SeccFirmwarePackager
             previewCard.Controls.Add(grid); workspace.Controls.Add(previewCard, 0, 1); workspace.SetColumnSpan(previewCard, 2);
             SectionCard result = new SectionCard { Name = "OperationResultCard", Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0), Padding = new Padding(14, 8, 14, 10) };
             TableLayoutPanel resultBody = CardLayout(2); resultBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); resultBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            TableLayoutPanel resultHeading = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty, BackColor = UiColors.Card };
-            resultHeading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); resultHeading.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
-            resultHeading.Controls.Add(TitleLabel("操作结果"), 0, 0);
-            headerView.Name = "HeaderViewButton"; headerView.Text = "查看包头"; headerView.Enabled = false; headerView.Dock = DockStyle.Fill; headerView.Margin = Padding.Empty;
-            StyleButton(headerView, false, true); headerView.Click += delegate { ShowGeneratedHeader(); };
-            resultHeading.Controls.Add(headerView, 1, 0); resultBody.Controls.Add(resultHeading, 0, 0);
+            resultBody.Controls.Add(TitleLabel("操作结果"), 0, 0);
             details.Name = "ResultDetails"; details.Multiline = true; details.ReadOnly = true; details.ScrollBars = ScrollBars.Both;
             details.WordWrap = false; details.Text = "";
             resultBody.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill, Padding = new Padding(9, 5, 9, 5) }, 0, 1); result.Controls.Add(resultBody);
@@ -898,31 +894,6 @@ namespace SeccFirmwarePackager
                 details.Text = "打包失败：" + ex.Message;
                 MessageBox.Show(this, details.Text, "打包失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-        }
-
-        private void OpenClicked(object sender, EventArgs e)
-        {
-            using (OpenFileDialog dialog = new OpenFileDialog())
-            {
-                dialog.Title = "打开并校验联合固件包";
-                dialog.Filter = "联合固件包 (*.bin)|*.bin|所有文件 (*.*)|*.*";
-                dialog.CheckFileExists = true;
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
-                try { DisplayVerifiedFile(dialog.FileName); }
-                catch (Exception ex)
-                {
-                    sounds.Play("failure");
-                    details.ForeColor = Color.FromArgb(181, 50, 57);
-                    details.Text = "校验失败：" + ex.Message;
-                    MessageBox.Show(this, details.Text, "校验失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            }
-        }
-
-        internal void DisplayVerifiedFile(string path)
-        {
-            PackageReport report = Packager.VerifyFile(path);
-            ShowReport("校验通过", Path.GetFullPath(path), report);
         }
 
         private void ShowReport(string result, string path, PackageReport report)

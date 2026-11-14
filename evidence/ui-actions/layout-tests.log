@@ -1,0 +1,4 @@
+PASS UI contract assertions=247 (not native interactive GUI validation)
+Desktop capture saved as candidate; inspect for active desktop/occlusion before treating it as visual proof.
+Saved native RichEdit EM_FORMATRANGE evidence (not a desktop screenshot).
+PASS header viewer assertions=4150; bounded-read implementation reviewed separately

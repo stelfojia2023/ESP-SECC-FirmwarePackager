@@ -43,7 +43,7 @@ internal static class GuiSmokeTests
     {
         foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
             foreach (string prefix in new[] { "Select_", "Clear_" }) CheckButton(Find<Button>(form, prefix + type));
-        foreach (string name in new[] { "BrowseOutput", "BuildButton", "OpenVerifyButton", "FtpUploadButton", "AutoLoadButton" })
+        foreach (string name in new[] { "BrowseOutput", "BuildButton", "HeaderViewButton", "FtpUploadButton", "AutoLoadButton" })
             CheckButton(Find<Button>(form, name));
     }
 
@@ -172,7 +172,7 @@ internal static class GuiSmokeTests
                             throw new Exception("FTP source before generation must be empty");
                         Application.DoEvents();
                         CheckButtonText(form);
-                        foreach (string name in new[] { "BrowseOutput", "BuildButton", "OpenVerifyButton" })
+                        foreach (string name in new[] { "BrowseOutput", "BuildButton", "HeaderViewButton" })
                         {
                             Control control = Find<Control>(form, name);
                             if (!control.Visible || control.Bounds.Bottom > control.Parent.ClientSize.Height || control.Height < 18)
@@ -216,10 +216,6 @@ internal static class GuiSmokeTests
                         string resultText = Find<TextBox>(form, "ResultDetails").Text;
                         if (!resultText.Contains("打包并校验成功") || !resultText.Contains("V000B01D15") || !resultText.Contains("联合包大小"))
                             throw new Exception("Generated package details not displayed");
-                        form.DisplayVerifiedFile(output);
-                        resultText = Find<TextBox>(form, "ResultDetails").Text;
-                        if (!resultText.Contains("校验通过") || !resultText.Contains("M4 测试固件.bin"))
-                            throw new Exception("View and verification details not displayed");
                         if (Packager.VerifyFile(output).Entries.Count != 1) throw new Exception("GUI package invalid");
                         Find<Button>(form, "Clear_M4").PerformClick();
                         if (preview.Rows.Count != 0 || preview.Visible) throw new Exception("Cleared preview must hide without empty rows");
