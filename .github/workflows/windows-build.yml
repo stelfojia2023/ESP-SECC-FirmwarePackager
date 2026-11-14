@@ -55,11 +55,11 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /win32manifest:app.manifest /out:TypographyAwareTests.exe tests/TypographyTests.cs
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /win32manifest:app.manifest /out:TypographyAwareTests.exe (Join-Path $PWD 'tests\TypographyTests.cs')
           if ($LASTEXITCODE) { throw 'Typography aware compile failed' }
           & ./TypographyAwareTests.exe dist/FirmwarePackager.exe evidence/ci/typography-aware
           if ($LASTEXITCODE) { throw 'Typography aware diagnostics failed' }
-          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /nowin32manifest /out:TypographyBaselineTests.exe tests/TypographyTests.cs
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /nowin32manifest /out:TypographyBaselineTests.exe (Join-Path $PWD 'tests\TypographyTests.cs')
           if ($LASTEXITCODE) { throw 'Typography baseline compile failed' }
           & ./TypographyBaselineTests.exe dist/FirmwarePackager.exe evidence/ci/typography-baseline
           if ($LASTEXITCODE) { throw 'Typography baseline diagnostics failed' }
