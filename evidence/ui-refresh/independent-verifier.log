@@ -1,0 +1,2 @@
+PASS independent parser: all 31 combinations, original bytes, headers, offsets, padding and MD5
+PASS independent parser: budget vector 0x57F000 and five original files
