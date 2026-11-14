@@ -200,6 +200,11 @@ namespace SeccFirmwarePackager
         private readonly Label ftpStatus = new Label();
         private readonly ToolTip tooltips = new ToolTip();
         private readonly UiSounds sounds = new UiSounds();
+        private readonly Panel packageScroll = new Panel();
+        private readonly Panel upgradeScroll = new Panel();
+        private readonly Button packageTab = new RaisedButton();
+        private readonly Button upgradeTab = new RaisedButton();
+        private readonly UpgradePage upgradePage = new UpgradePage();
         private Button ftpBrowseFile;
         private TableLayoutPanel workspace;
         private SectionCard previewCard;
@@ -214,6 +219,10 @@ namespace SeccFirmwarePackager
         private bool ftpListing;
         private bool changing;
         private string lastPreviewMessage;
+        private bool pageInitialized;
+        private bool showingUpgradePage;
+        private Size packagePageSize;
+        private Size upgradePageSize;
 
         public MainForm()
         {
@@ -226,13 +235,29 @@ namespace SeccFirmwarePackager
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
             Button help = new RaisedButton { Name = "HelpButton", Text = "ⓘ", AccessibleName = "操作说明", Size = new Size(30, 25), Anchor = AnchorStyles.Right };
             help.Click += delegate { ShowHelp(); }; tooltips.SetToolTip(help, "操作说明");
-            Panel scroll = new Panel { Name = "ContentScroll", Dock = DockStyle.Fill, AutoScroll = true }; Controls.Add(scroll); scroll.BringToFront();
+            TableLayoutPanel root = new TableLayoutPanel { Name = "MainPages", Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty, BackColor = UiColors.Canvas };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42)); root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            Controls.Add(root);
+            FlowLayoutPanel navigation = new FlowLayoutPanel { Name = "PageNavigation", Dock = DockStyle.Fill, WrapContents = false,
+                Margin = Padding.Empty, Padding = new Padding(18, 2, 18, 0), BackColor = UiColors.Canvas };
+            PreparePageTab(packageTab, "PackPageTab", "固件打包");
+            PreparePageTab(upgradeTab, "UpgradePageTab", "设备升级");
+            packageTab.Click += delegate { ShowUpgradePage(false); };
+            upgradeTab.Click += delegate { ShowUpgradePage(true); };
+            navigation.Controls.Add(packageTab); navigation.Controls.Add(upgradeTab); root.Controls.Add(navigation, 0, 0);
+            Panel pageHost = new Panel { Name = "PageHost", Dock = DockStyle.Fill, Margin = Padding.Empty, BackColor = UiColors.Canvas };
+            packageScroll.Name = "ContentScroll"; packageScroll.Dock = DockStyle.Fill; packageScroll.AutoScroll = true;
+            upgradeScroll.Name = "UpgradeScroll"; upgradeScroll.Dock = DockStyle.Fill; upgradeScroll.AutoScroll = true;
+            upgradeScroll.Controls.Add(upgradePage); pageHost.Controls.Add(upgradeScroll); pageHost.Controls.Add(packageScroll);
+            root.Controls.Add(pageHost, 0, 1);
+            ShowUpgradePage(false);
             workspace = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 3,
                 Padding = new Padding(18, 14, 18, 14), Margin = Padding.Empty };
             workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55)); workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
             workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 440));
             workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
-            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 270)); scroll.Controls.Add(workspace);
+            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 270)); packageScroll.Controls.Add(workspace);
             TableLayoutPanel inputs = CardLayout(5); inputs.Name = "InputsCard"; inputs.BackColor = UiColors.Canvas;
             for (int i = 0; i < 5; i++) inputs.RowStyles.Add(new RowStyle(SizeType.Percent, 20));
             workspace.Controls.Add(inputs, 0, 0);
@@ -308,7 +333,7 @@ namespace SeccFirmwarePackager
             ftpAddress.KeyDown += delegate(object sender, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; ApplyFtpAddress(ftpAddress.Text, true); } };
             ftpUser.Name = "FtpUser"; ftpUser.AccessibleName = "FTP 用户名";
             ftpPassword.Name = "FtpPassword"; ftpPassword.UseSystemPasswordChar = true; ftpPassword.AccessibleName = "FTP 密码";
-            ftpAddress.Text = "ftp://113.200.149.194/upgrade";
+            ftpAddress.Text = "ftp://113.200.149.194/Update/";
             ftpUser.Text = "test";
             ftpPassword.Text = "1234.com";
             ftpAuthority = FtpUploader.ParseAddress(ftpAddress.Text).DirectoryUri.GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped);
@@ -340,6 +365,32 @@ namespace SeccFirmwarePackager
             resultBody.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill, Padding = new Padding(9, 5, 9, 5) }, 0, 1); result.Controls.Add(resultBody);
             workspace.Controls.Add(result, 0, 2); workspace.SetColumnSpan(result, 2);
             RefreshPreview();
+        }
+
+        private void PreparePageTab(Button button, string name, string text)
+        {
+            button.Name = name; button.Text = text; button.AccessibleName = text;
+            StyleButton(button, false, false); button.Size = new Size(140, 32); button.Margin = new Padding(0, 3, 8, 3);
+        }
+
+        private void ShowUpgradePage(bool show)
+        {
+            if (pageInitialized && showingUpgradePage != show)
+            {
+                Size current = WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;
+                if (show) packagePageSize = current; else upgradePageSize = current;
+                MinimumSize = show ? new Size(920, 460) : new Size(1100, 720);
+                if (WindowState == FormWindowState.Normal)
+                {
+                    if (show)
+                        Size = upgradePageSize.IsEmpty ? new Size(Math.Min(current.Width, 1000), Math.Min(current.Height, 560)) : upgradePageSize;
+                    else if (!packagePageSize.IsEmpty) Size = packagePageSize;
+                }
+            }
+            pageInitialized = true; showingUpgradePage = show;
+            packageScroll.Visible = !show; upgradeScroll.Visible = show;
+            packageTab.BackColor = show ? Color.FromArgb(238, 234, 242) : Color.FromArgb(219, 230, 214);
+            upgradeTab.BackColor = show ? Color.FromArgb(219, 230, 214) : Color.FromArgb(238, 234, 242);
         }
 
         private Button MainButton(string name, string text, bool primary)
@@ -531,7 +582,7 @@ namespace SeccFirmwarePackager
                 help.Text = "操作说明"; help.StartPosition = FormStartPosition.CenterParent;
                 help.Size = new Size(650, 520); help.MinimumSize = new Size(480, 360); help.BackColor = UiColors.Canvas;
                 TextBox text = new TextBox { Name = "HelpText", Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = UiColors.Canvas, Font = Font };
-                text.Text = "文件与版本\r\n名称为文件名去掉 .bin；版本取下划线后的 V/v 至下一个下划线或点，保留大小写。名称/版本可修改，最多 96/64 个 UTF-8 字节。手动选入缺版本文件后须补填才能生成。\r\n\r\n一键加载\r\n仅扫描当前文件夹；按开头 PFC、LLC、M4、PLC、ESP32 识别 .bin，大小写不敏感。同类唯一且有效才更新；多文件、缺版本或无效项保留原选择并提示。一键清理不删除磁盘文件，不清 FTP 配置和输出位置。\r\n\r\n大小限制\r\n文件不可为空。PFC/LLC：256,000 字节（250 KiB）；M4：524,288 字节（512 KiB）；PLC：2,097,152 字节（2 MiB）；ESP32：2,621,440 字节（2.5 MiB）。整包最多 6,291,456 字节（6 MiB），含包头和对齐。加载和生成都会检查。\r\n\r\nFTP\r\n生成后默认上传该联合包，也可独立选任意本地文件。联合包上传前校验；普通文件不做包格式校验。打开 FTP 目录可查看服务器返回条目，同名仅比较名称。普通 FTP 明文传输，服务器同名文件可能覆盖。\r\n\r\n查看包头\r\n生成成功后可查看本次包最前 4096 字节；只读，不改变文件，也不读取后续固件内容。地址范围 0x0000～0x0FFF。";
+                text.Text = "文件与版本\r\n名称为文件名去掉 .bin；版本取下划线后的 V/v 至下一个下划线或点，保留大小写。名称/版本可修改，最多 96/64 个 UTF-8 字节。手动选入缺版本文件后须补填才能生成。\r\n\r\n一键加载\r\n仅扫描当前文件夹；按开头 PFC、LLC、M4、PLC、ESP32 识别 .bin，大小写不敏感。同类唯一且有效才更新；多文件、缺版本或无效项保留原选择并提示。一键清理不删除磁盘文件，不清 FTP 配置和输出位置。\r\n\r\n大小限制\r\n文件不可为空。PFC/LLC：256,000 字节（250 KiB）；M4：524,288 字节（512 KiB）；PLC：2,097,152 字节（2 MiB）；ESP32：2,621,440 字节（2.5 MiB）。整包最多 6,291,456 字节（6 MiB），含包头和对齐。加载和生成都会检查。\r\n\r\nFTP\r\n生成后默认上传该联合包，也可独立选任意本地文件。联合包上传前校验；普通文件不做包格式校验。打开 FTP 目录可查看服务器返回条目，同名仅比较名称。普通 FTP 明文传输，服务器同名文件可能覆盖。\r\n\r\n查看包头\r\n生成成功后可查看本次包最前 4096 字节；只读，不改变文件，也不读取后续固件内容。地址范围 0x0000～0x0FFF。\r\n\r\n设备升级\r\n生成的联合包会自动关联至升级页面，也可拖入或选择其他 BIN。本地网口协议与远程运营平台接口尚未接入，当前不能执行升级。";
                 help.Padding = new Padding(20); help.Controls.Add(text);
                 help.Shown += delegate { text.Select(0, 0); };
                 help.ShowDialog(this);
@@ -992,6 +1043,7 @@ namespace SeccFirmwarePackager
                 lastGeneratedHeader = generatedHeader;
                 headerView.Enabled = true;
                 SetFtpFile(lastGeneratedPackage, true);
+                upgradePage.UseGeneratedPackage(lastGeneratedPackage, report);
                 ShowReport("打包并校验成功", lastGeneratedPackage, report);
             }
             catch (Exception ex)

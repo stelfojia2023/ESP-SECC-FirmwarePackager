@@ -24,6 +24,7 @@ internal static class ReleaseUiTests
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out Rect rect);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr window);
     [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr window);
     [DllImport("user32.dll")] private static extern IntPtr GetDlgItem(IntPtr dialog, int id);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SendMessageW")]
@@ -195,6 +196,19 @@ internal static class ReleaseUiTests
         return candidates[position];
     }
 
+    private static Node EditByLabel(IntPtr root, string labelText)
+    {
+        List<Node> nodes = Children(root);
+        Node label = null;
+        foreach (Node node in nodes) if (node.Text == labelText && IsWindowVisible(node.Handle)) { label = node; break; }
+        if (label == null) throw new Exception("Missing label: " + labelText);
+        foreach (Node node in nodes)
+            if (IsClass(node, "EDIT") && IsWindowVisible(node.Handle) && node.Bounds.Left >= label.Bounds.Right &&
+                Math.Abs((node.Bounds.Top + node.Bounds.Bottom) - (label.Bounds.Top + label.Bounds.Bottom)) < 20)
+                return node;
+        throw new Exception("Missing input for label: " + labelText);
+    }
+
     private static bool ContainsText(IntPtr root, string expected)
     {
         foreach (Node child in Children(root))
@@ -322,6 +336,8 @@ internal static class ReleaseUiTests
             DismissError(id, "操作说明", "文件与版本");
             Node browseM4 = Button(root, "选择 M4 固件", 0);
             Node dropTarget = EditInRow(root, browseM4, 0);
+            SetForegroundWindow(root);
+            Thread.Sleep(200);
             RealDrag(dropTarget.Handle, input);
             WaitUntil(delegate { return Describe(dropTarget.Handle).Text == input; }, "Native file drag did not populate the input path.");
             Node droppedName = EditInMetadataRow(root, browseM4, 0);
@@ -349,12 +365,35 @@ internal static class ReleaseUiTests
             WaitUntil(delegate { header = UntitledHeaderDialog(id); return header != IntPtr.Zero; }, "Untitled header dialog did not appear.");
             if (!PostMessage(header, WM_CLOSE, IntPtr.Zero, IntPtr.Zero)) throw new Exception("Could not close header dialog.");
             WaitUntil(delegate { return UntitledHeaderDialog(id) == IntPtr.Zero; }, "Header dialog did not close.");
+            Click(Button(root, "设备升级", 0).Handle);
+            WaitUntil(delegate { return ContainsText(root, "本地网口升级协议尚未接入"); }, "Upgrade page did not appear.");
+            Node upgradeBrowse = Button(root, "选择升级 BIN", 0);
+            Node upgradePath = EditInRow(root, upgradeBrowse, 0);
+            if (Describe(upgradePath.Handle).Text != output || !ContainsText(root, "V000B01D15"))
+                throw new Exception("Generated package was not handed to the upgrade page.");
+            if (IsWindowEnabled(Button(root, "开始升级", 0).Handle) || !ContainsText(root, "本地网口升级协议尚未接入"))
+                throw new Exception("Unimplemented local upgrade was not clearly disabled.");
+            Click(Button(root, "远程升级", 0).Handle);
+            WaitUntil(delegate { return ContainsText(root, "运营平台升级接口尚未接入"); }, "Remote upgrade settings did not appear.");
+            Node cpid = EditByLabel(root, "CPID");
+            SetText(cpid.Handle, "TEST-CPID-001");
+            Click(Button(root, "本地升级", 0).Handle);
+            WaitUntil(delegate { return ContainsText(root, "本地网口升级协议尚未接入"); }, "Local upgrade settings did not return.");
+            Click(Button(root, "远程升级", 0).Handle);
+            WaitUntil(delegate { return IsWindowVisible(cpid.Handle); }, "Remote upgrade settings did not return.");
+            if (Describe(cpid.Handle).Text != "TEST-CPID-001") throw new Exception("CPID was lost when switching modes.");
             if (args.Length == 3)
             {
                 string previous = Path.GetFullPath(args[2]);
                 if (!File.Exists(previous)) throw new Exception("Previous V1 sample not found.");
                 if (Packager.VerifyFile(previous).Entries.Count != 2) throw new Exception("Previous V1 sample has unexpected contents.");
+                Click(upgradeBrowse.Handle);
+                ChooseFile(id, "选择升级 BIN", previous);
+                WaitUntil(delegate { return Describe(upgradePath.Handle).Text == previous; }, "Manual upgrade file was not selected.");
+                if (!ContainsText(root, "ESP32")) throw new Exception("Manually selected package content was not displayed.");
             }
+            Click(Button(root, "固件打包", 0).Handle);
+            WaitUntil(delegate { return IsWindowVisible(Button(root, "包生成", 0).Handle); }, "Packaging page did not return.");
             byte[] corrupt = File.ReadAllBytes(output);
             corrupt[4096] ^= 1;
             string corruptPath = Path.Combine(work, "损坏 联合 包.bin");
@@ -366,7 +405,7 @@ internal static class ReleaseUiTests
             process.CloseMainWindow();
             if (!process.WaitForExit(10000)) throw new Exception("Release window did not close.");
             if (process.ExitCode != 0) throw new Exception("Release returned nonzero exit code.");
-            Console.WriteLine("PASS delivered EXE: help, native file drag, browse, default name, missing-version error, save, generate, header dialog; core rejects corruption" + (args.Length == 3 ? " and validates prior sample" : ""));
+            Console.WriteLine("PASS delivered EXE: help, native file drag, browse, generate, header dialog, upgrade page handoff, mode switch and manual file selection; core rejects corruption" + (args.Length == 3 ? " and validates prior sample" : ""));
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL release UI " + ex); return 1; }

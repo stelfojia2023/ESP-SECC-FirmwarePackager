@@ -191,6 +191,32 @@ internal static class GuiSmokeTests
         }
     }
 
+    private static void TestUpgradeDrag(MainForm form, string package)
+    {
+        if (Find<TextBox>(form, "UpgradePackagePath").Text != package)
+            throw new Exception("Generated package was not handed to the upgrade page");
+        Find<Button>(form, "UpgradePageTab").PerformClick(); Application.DoEvents();
+        TextBox path = Find<TextBox>(form, "UpgradePackagePath");
+        Label hint = Find<Label>(form, "UpgradePackageHint");
+        string notBin = Path.Combine(workDir, "not-an-upgrade.txt"); File.WriteAllText(notBin, "synthetic");
+        if (SendDrag(path, "OnDragEnter", new[] { package }).Effect != DragDropEffects.Copy ||
+            SendDrag(path, "OnDragEnter", new[] { notBin }).Effect != DragDropEffects.None ||
+            SendDrag(path, "OnDragEnter", new[] { package, package }).Effect != DragDropEffects.None)
+            throw new Exception("Upgrade file drag acceptance is incorrect");
+        path.Clear(); Application.DoEvents();
+        if (!hint.Visible || SendDrag(hint, "OnDragEnter", new[] { package }).Effect != DragDropEffects.Copy)
+            throw new Exception("Empty upgrade file hint must accept a BIN drop");
+        SendDrag(hint, "OnDragDrop", new[] { package }); Application.DoEvents();
+        if (path.Text != package || hint.Visible || !Find<TextBox>(form, "UpgradePackageInfo").Text.Contains("M4"))
+            throw new Exception("Dropping a valid package did not populate the upgrade page");
+        string raw = Path.Combine(workDir, "different-file.bin"); File.WriteAllBytes(raw, new byte[] { 1, 2, 3 });
+        SendDrag(path.Parent, "OnDragDrop", new[] { raw }); Application.DoEvents();
+        if (path.Text != raw || !Find<TextBox>(form, "UpgradePackageInfo").Text.Contains("无法识别"))
+            throw new Exception("Replacing the file did not report the unknown package format");
+        Find<Button>(form, "PackPageTab").PerformClick(); Application.DoEvents();
+        Console.WriteLine("PASS upgrade file drag: generated handoff, BIN filtering, empty hint drop and manual replacement");
+    }
+
     [STAThread]
     public static int Main(string[] args)
     {
@@ -276,6 +302,7 @@ internal static class GuiSmokeTests
                         if (!resultText.Contains("打包并校验成功") || !resultText.Contains("V000B01D15") || !resultText.Contains("联合包大小"))
                             throw new Exception("Generated package details not displayed");
                         if (Packager.VerifyFile(output).Entries.Count != 1) throw new Exception("GUI package invalid");
+                        TestUpgradeDrag(form, output);
                         Find<Button>(form, "Clear_M4").PerformClick();
                         if (preview.Rows.Count != 0 || preview.Visible) throw new Exception("Cleared preview must hide without empty rows");
                         string overBudget = Path.Combine(workDir, "PFC 超限.bin");
@@ -311,6 +338,9 @@ internal static class GuiSmokeTests
                         Find<Button>(form, "BuildButton").PerformClick();
                         if (Packager.VerifyFile(allOutput).Entries.Count != 5)
                             throw new Exception("GUI failed to build a five-file package");
+                        if (Find<TextBox>(form, "UpgradePackagePath").Text != allOutput ||
+                            !Find<TextBox>(form, "UpgradePackageInfo").Text.Contains("ESP32"))
+                            throw new Exception("The latest generated package did not replace the upgrade file selection");
                         TextBox fiveReport = Find<TextBox>(form, "ResultDetails");
                         if (fiveReport.Text.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Length > 10)
                             throw new Exception("Five-firmware success report must fit ten lines");

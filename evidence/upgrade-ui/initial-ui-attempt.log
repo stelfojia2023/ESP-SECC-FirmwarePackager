@@ -1,0 +1,38 @@
+PASS filename parsing assertions=74
+src\UpgradePage.cs(127,41): warning CS0108: “SeccFirmwarePackager.UpgradePage.Layout(int)”隐藏了继承的成员“System.Windows.Forms.Control.Layout”。如果是有意隐藏，请使用关键字 new。
+c:\Windows\Microsoft.NET\Framework64\v4.0.30319\System.Windows.Forms.dll: (与前一个警告相关的符号位置)
+Desktop capture saved as candidate; inspect for active desktop/occlusion before treating it as visual proof.
+Saved native RichEdit EM_FORMATRANGE evidence (not a desktop screenshot).
+PASS header viewer assertions=4151; bounded-read implementation reviewed separately
+PASS 31 nonempty combinations, alignment, extraction and hashes
+PASS 5,628 KiB budget vector and all five expected offsets
+PASS corruption, structural rejection, firmware/whole MD5, padding and truncation
+PASS all five file hard limits: zero rejected, boundary accepted, boundary+1 rejected
+PASS invalid input, limits, hard file limits, safe output and UTF-8 limits
+PASS assertions=260552
+PASS FTP address parsing, credential masking and encoded characters
+PASS loopback FTP: 226 success and byte match, auth failure, write refusal, final 451 failure and invalid package
+PASS ordinary FTP files: non-BIN, empty, >6 MiB, exact bytes, 226/250, 530/550/451, unreadable and package-path isolation
+PASS read-only FTP listing: UTF-8 and GBK names, empty, credentials, 530/550/451, complete-list limits
+PASS FTP assertions=80
+src\UpgradePage.cs(127,41): warning CS0108: “SeccFirmwarePackager.UpgradePage.Layout(int)”隐藏了继承的成员“System.Windows.Forms.Control.Layout”。如果是有意隐藏，请使用关键字 new。
+c:\Windows\Microsoft.NET\Framework64\v4.0.30319\System.Windows.Forms.dll: (与前一个警告相关的符号位置)
+PASS upgrade file drag: generated handoff, BIN filtering, empty hint drop and manual replacement
+PASS FTP UI: paste parses and masks credentials, confirm upload, loopback success and failure status, server change clears credentials
+PASS FTP directory UI: no local file, empty, matched and missing names, sizing and credential masking
+PASS visible WinForms UI: button text spacing at default and minimum sizes, 125 percent font metrics, drag handlers, manual input, five-file preview, generate, verify, hard-limit rejection and small window
+Native drag start=95,76 cursor=95,76 source-pid=296032 pointer-pid=42260 foreground=False source-active=False
+Native drag start=95,76 cursor=95,76 source-pid=296032 pointer-pid=296032 foreground=True source-active=True
+Native drag mouse-down event received; source=95,76 target=781,539
+Native drag mouse-up sent
+Native drag result=Copy
+FAIL release UI System.Exception: Native file drag did not populate the input path.
+   在 ReleaseUiTests.WaitUntil(Func`1 condition, String failure)
+   在 ReleaseUiTests.Main(String[] args)
+Release GUI test failed.
+所在位置 C:\Users\zhangyy\AppData\Local\Temp\secc-upgrade-ui.sezq1lim\work\tests\run-tests.ps1:52 字符: 28
++ if ($LASTEXITCODE -ne 0) { throw 'Release GUI test failed.' }
++                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (Release GUI test failed.:String) [], RuntimeException
+    + FullyQualifiedErrorId : Release GUI test failed.
+ 

@@ -259,6 +259,81 @@ internal static class UiContractTests
         if (failure != null) throw failure;
         Assert(inspected, "header dialog inspected before close");
     }
+    private static void TestUpgradePage(Form form, string work, string package)
+    {
+        Size packageWindow = form.Size;
+        string oldOutput = Find(form, "OutputPath").Text;
+        string oldFtpFile = Find(form, "FtpFilePath").Text;
+        Control page = Find(form, "UpgradePage");
+        TextBox file = (TextBox)Find(form, "UpgradePackagePath");
+        TextBox info = (TextBox)Find(form, "UpgradePackageInfo");
+        Assert(!page.Visible && Find(form, "ContentScroll").Visible, "packaging page is initially selected");
+        Assert(file.Text == package, "generated package is automatically associated without reselection");
+        Assert(info.Text.Contains("M4") && info.Text.Contains("V000B01D15"), "generated firmware version is shown");
+        ((Button)Find(form, "UpgradePageTab")).PerformClick(); Application.DoEvents();
+        Assert(page.Visible && !Find(form, "ContentScroll").Visible, "upgrade tab displays its page");
+        Assert(form.Width <= 1000 && form.Height <= 560, "upgrade page uses a compact default window");
+        Assert(Find(form, "LocalUpgradeSettings").Visible && !Find(form, "RemoteUpgradeSettings").Visible, "local settings selected initially");
+        Assert(!Find(form, "StartUpgradeButton").Enabled && Find(form, "UpgradeStatus").Text.Contains("尚未接入"), "unfinished protocol is explicit and disabled");
+        Assert(file.ReadOnly && file.AllowDrop && Find(form, "UpgradePackageHint").AllowDrop, "upgrade BIN supports safe drag and selection");
+        TextBox localIp = (TextBox)Find(form, "LocalDeviceIp");
+        TextBox localPort = (TextBox)Find(form, "LocalDevicePort");
+        localIp.Text = "192.0.2.10"; localPort.Text = "12345";
+        ((Button)Find(form, "RemoteUpgradeMode")).PerformClick(); Application.DoEvents();
+        Assert(Find(form, "RemoteUpgradeSettings").Visible && !Find(form, "LocalUpgradeSettings").Visible, "remote settings replace local settings");
+        Assert(Find(form, "UpgradeStatus").Text.Contains("平台") && !Find(form, "StartUpgradeButton").Enabled, "remote API is not faked");
+        TextBox endpoint = (TextBox)Find(form, "RemotePlatformAddress");
+        TextBox cpid = (TextBox)Find(form, "RemoteCpid");
+        TextBox password = (TextBox)Find(form, "RemotePassword");
+        endpoint.Text = "https://example.invalid/api"; cpid.Text = "TEST-CPID-001"; password.Text = "synthetic-only";
+        Assert(password.UseSystemPasswordChar, "remote platform password is masked");
+        ((Button)Find(form, "LocalUpgradeMode")).PerformClick(); Application.DoEvents();
+        Assert(localIp.Text == "192.0.2.10" && localPort.Text == "12345", "local settings survive mode change");
+        ((Button)Find(form, "RemoteUpgradeMode")).PerformClick(); Application.DoEvents();
+        Assert(endpoint.Text == "https://example.invalid/api" && cpid.Text == "TEST-CPID-001" && password.Text == "synthetic-only",
+            "remote settings survive mode change");
+
+        MethodInfo select = page.GetType().GetMethod("SelectPackage", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert(select != null, "upgrade package selection exists");
+        string alternate = Path.Combine(work, "alternate-upgrade.bin");
+        File.Copy(package, alternate, true);
+        byte[] before = File.ReadAllBytes(alternate);
+        select.Invoke(page, new object[] { alternate }); Application.DoEvents();
+        Assert(file.Text == alternate && info.Text.Contains("M4") && info.Text.Contains("V000B01D15"), "manual selection replaces generated package");
+        Assert(Convert.ToBase64String(File.ReadAllBytes(alternate)) == Convert.ToBase64String(before), "selection does not modify or upload the package");
+        string other = Path.Combine(work, "ordinary.txt");
+        select.Invoke(page, new object[] { other }); Application.DoEvents();
+        Assert(file.Text == alternate && info.Text.Contains("BIN"), "non-BIN selection keeps previous file");
+        string unknown = Path.Combine(work, "unknown.bin"); File.WriteAllBytes(unknown, new byte[] { 1, 2, 3 });
+        select.Invoke(page, new object[] { unknown }); Application.DoEvents();
+        Assert(file.Text == unknown && info.Text.Contains("无法识别"), "unknown BIN can be selected without claiming validity");
+        select.Invoke(page, new object[] { package }); Application.DoEvents();
+        Assert(file.Text == package && info.Text.Contains("M4"), "valid package can be selected again");
+
+        foreach (string name in new[] { "PackPageTab", "UpgradePageTab", "LocalUpgradeMode", "RemoteUpgradeMode", "StartUpgradeButton" })
+        {
+            Control c = Find(form, name);
+            Size caption = TextRenderer.MeasureText(c.Text, c.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+            Assert(c.ClientSize.Width >= caption.Width + 12 && c.ClientSize.Height >= caption.Height + 4, "upgrade caption fits " + name);
+        }
+        Assert(Find(form, "StartUpgradeButton").Size == Find(form, "BuildButton").Size, "upgrade action shares main button size");
+        form.Size = form.MinimumSize; form.PerformLayout(); Application.DoEvents();
+        Panel scroll = (Panel)Find(form, "UpgradeScroll");
+        Control start = Find(form, "StartUpgradeButton");
+        scroll.ScrollControlIntoView(start); Application.DoEvents();
+        Assert(scroll.RectangleToScreen(scroll.ClientRectangle).Contains(start.RectangleToScreen(start.ClientRectangle)), "upgrade action is reachable at minimum size");
+        Assert(info.ClientSize.Height >= info.Font.Height, "upgrade package information is not clipped");
+        using (Bitmap image = new Bitmap(form.Width, form.Height))
+        { form.DrawToBitmap(image, new Rectangle(Point.Empty, form.Size)); image.Save(Path.Combine(work, "upgrade-remote-render.png")); }
+        ((Button)Find(form, "PackPageTab")).PerformClick(); Application.DoEvents();
+        Assert(form.Size == packageWindow && Find(form, "ContentScroll").Visible && !page.Visible, "packaging window size and page restored");
+        Assert(Find(form, "OutputPath").Text == oldOutput && Find(form, "FtpFilePath").Text == oldFtpFile, "page switching retains packaging and FTP choices");
+        ((Button)Find(form, "UpgradePageTab")).PerformClick(); Application.DoEvents();
+        Assert(Find(form, "RemoteUpgradeSettings").Visible && cpid.Text == "TEST-CPID-001" && file.Text == package,
+            "upgrade page retains mode, package, and configuration");
+        ((Button)Find(form, "PackPageTab")).PerformClick(); Application.DoEvents();
+    }
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -272,7 +347,7 @@ internal static class UiContractTests
             using (Form form = (Form)Activator.CreateInstance(app.GetType("SeccFirmwarePackager.MainForm"), true))
             {
                 form.Show(); Application.DoEvents();
-                Assert(Digest(Find(form, "FtpAddress").Text) == "64b4d869fb40bf0af4eea8d7f1b63532f77c4322228dca63841e57b4cf34d1f9", "requested default FTP address");
+                Assert(Digest(Find(form, "FtpAddress").Text) == "7ef91abc146ce03ca586e530df0f03a4633df110ebb23e73a4271e5c5375f604", "requested default FTP address");
                 Assert(Digest(Find(form, "FtpUser").Text) == "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "requested default FTP user");
                 Assert(Digest(Find(form, "FtpPassword").Text) == "eb2f983bf53fe54df17ad96abf5ebd0bc414f9493647e244fc4c92f86ac11499" &&
                     ((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "requested default FTP password is masked");
@@ -362,6 +437,7 @@ internal static class UiContractTests
                 changed = (byte[])generatedBytes.Clone(); changed[4096] ^= 1; File.WriteAllBytes(package, changed);
                 Assert(Convert.ToBase64String((byte[])readGenerated.Invoke(form, null)) == Convert.ToBase64String(snapshot), "header viewer does not claim payload integrity verification");
                 File.WriteAllBytes(package, generatedBytes);
+                TestUpgradePage(form, work, package);
                 string result = Find(form, "ResultDetails").Text;
                 Assert(result.Contains("打包并校验成功") && result.Contains(package) && result.Contains("联合包大小"), "useful result retained");
                 Assert(!result.Contains("包格式") && !result.Contains("包头") && !result.Contains("MD5") && !result.Contains("0x"), "format internals removed from success report");
@@ -412,6 +488,22 @@ internal static class UiContractTests
                 ((Button)Find(form, "BuildButton")).PerformClick();
                 Application.DoEvents();
                 Assert(File.Exists(fivePackage), "five file fixture generated");
+                Assert(Find(form, "UpgradePackagePath").Text == fivePackage && Find(form, "UpgradePackageInfo").Text.Contains("ESP32"),
+                    "newly generated five-file package replaces the upgrade selection");
+                ((Button)Find(form, "UpgradePageTab")).PerformClick(); Application.DoEvents();
+                TextBox upgradeInfo = (TextBox)Find(form, "UpgradePackageInfo");
+                Assert(upgradeInfo.Lines.Length == 5 && upgradeInfo.ClientSize.Height >= upgradeInfo.Font.Height * 5,
+                    "all five upgrade package versions are visible without vertical clipping");
+                using (Font enlarged = new Font(upgradeInfo.Font.FontFamily, upgradeInfo.Font.Size * 1.25F, upgradeInfo.Font.Style))
+                    Assert(upgradeInfo.ClientSize.Height >= enlarged.Height * 5, "five upgrade versions fit 125 percent text");
+                using (Bitmap image = new Bitmap(form.Width, form.Height))
+                { form.DrawToBitmap(image, new Rectangle(Point.Empty, form.Size)); image.Save(Path.Combine(work, "upgrade-five-render.png")); }
+                Panel upgradeScroll = (Panel)Find(form, "UpgradeScroll");
+                Control upgradeStart = Find(form, "StartUpgradeButton");
+                upgradeScroll.ScrollControlIntoView(upgradeStart); Application.DoEvents();
+                Assert(upgradeScroll.RectangleToScreen(upgradeScroll.ClientRectangle).Contains(upgradeStart.RectangleToScreen(upgradeStart.ClientRectangle)),
+                    "five-file upgrade action remains reachable by scrolling");
+                ((Button)Find(form, "PackPageTab")).PerformClick(); Application.DoEvents();
                 Assert(grid.Visible && grid.Rows.Count == 5 && grid.DisplayedRowCount(false) >= 5, "all five rows fully displayed");
                 Assert(resultBox.Text.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Length <= 10, "five-file report within ten lines");
                 using (Bitmap image = new Bitmap(form.Width, form.Height))

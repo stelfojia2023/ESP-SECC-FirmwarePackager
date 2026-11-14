@@ -7,6 +7,7 @@ New-Item -ItemType Directory -Path $testRoot | Out-Null
 $core = Join-Path $root 'src\Packager.cs'
 $ftp = Join-Path $root 'src\FtpUploader.cs'
 $form = Join-Path $root 'src\MainForm.cs'
+$upgrade = Join-Path $root 'src\UpgradePage.cs'
 $header = Join-Path $root 'src\HeaderViewer.cs'
 $names = Join-Path $root 'src\FilenameRules.cs'
 $ui = Join-Path $root 'src\UiControls.cs'
@@ -29,7 +30,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Filename test compilation failed.' }
 & $filenameExe
 if ($LASTEXITCODE -ne 0) { throw 'Filename tests failed.' }
 $headerExe = Join-Path $testRoot 'HeaderViewerTests.exe'
-& $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:HeaderViewerTests "/out:$headerExe" $core $ftp $form $ui $names (Join-Path $root 'src\HeaderViewer.cs') (Join-Path $root 'tests\HeaderViewerTests.cs')
+& $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:HeaderViewerTests "/out:$headerExe" $core $ftp $form $upgrade $ui $names (Join-Path $root 'src\HeaderViewer.cs') (Join-Path $root 'tests\HeaderViewerTests.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Header viewer compilation failed.' }
 & $headerExe (Join-Path $testRoot 'header results')
 if ($LASTEXITCODE -ne 0) { throw 'Header viewer tests failed.' }
@@ -41,7 +42,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Core tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'FTP test compilation failed.' }
 & $ftpExe $previousSample (Join-Path $testRoot 'ftp results')
 if ($LASTEXITCODE -ne 0) { throw 'FTP tests failed.' }
-& $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:GuiSmokeTests "/win32icon:$icon" "/out:$guiExe" $core $ftp $form $ui $names $header $ftpTest $guiTest
+& $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:GuiSmokeTests "/win32icon:$icon" "/out:$guiExe" $core $ftp $form $upgrade $ui $names $header $ftpTest $guiTest
 if ($LASTEXITCODE -ne 0) { throw 'GUI test compilation failed.' }
 & $guiExe (Join-Path $testRoot 'gui results')
 if ($LASTEXITCODE -ne 0) { throw 'GUI smoke test failed.' }

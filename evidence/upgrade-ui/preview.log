@@ -1,0 +1,8 @@
+PageNavigation: visible=True bounds={X=0,Y=0,Width=984,Height=42} client={Width=984, Height=42}
+UpgradePage: visible=True bounds={X=0,Y=0,Width=984,Height=408} client={Width=984, Height=408}
+UpgradePackageCard: visible=True bounds={X=18,Y=14,Width=948,Height=140} client={Width=948, Height=140}
+UpgradeSettingsCard: visible=True bounds={X=18,Y=162,Width=948,Height=152} client={Width=948, Height=152}
+UpgradeResultCard: visible=True bounds={X=18,Y=322,Width=948,Height=64} client={Width=948, Height=64}
+RemoteUpgradeSettings: visible=True bounds={X=0,Y=0,Width=924,Height=96} client={Width=924, Height=96}
+RemoteCpid: visible=True bounds={X=8,Y=5,Width=830,Height=17} client={Width=830, Height=17}
+StartUpgradeButton: visible=True bounds={X=741,Y=2,Width=180,Height=40} client={Width=180, Height=40}
