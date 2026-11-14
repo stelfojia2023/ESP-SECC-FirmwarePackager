@@ -544,7 +544,8 @@ namespace SeccFirmwarePackager
                 grid.Rows.Add(row.Type, row.PathBox.Text, "大小：" + size, "偏移：" + offset);
             }
             previewCard.Visible = grid.Rows.Count > 0;
-            workspace.RowStyles[1].Height = grid.Rows.Count == 0 ? 0 : 34 + grid.Rows.Count * grid.RowTemplate.Height;
+            int rowPixels = 0; foreach (DataGridViewRow visibleRow in grid.Rows) rowPixels += visibleRow.Height;
+            workspace.RowStyles[1].Height = grid.Rows.Count == 0 ? 0 : previewCard.Margin.Vertical + previewCard.Padding.Vertical + rowPixels + SystemInformation.HorizontalScrollBarHeight + 6;
             status.Text = problem == null ? "" : "未就绪：" + problem;
             status.ForeColor = problem == null ? UiColors.Muted : Color.FromArgb(181, 50, 57);
             if (plan != null && plan.Warnings.Count > 0) status.Text = String.Join("\r\n", plan.Warnings.ToArray());
