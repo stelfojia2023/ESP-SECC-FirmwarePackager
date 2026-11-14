@@ -333,7 +333,7 @@ internal static class ReleaseUiTests
             WaitUntil(delegate { process.Refresh(); return process.MainWindowHandle != IntPtr.Zero; }, "Release GUI window did not appear.");
             Thread.Sleep(1000);
             process.Refresh();
-            if (!process.MainWindowTitle.Contains("V0.0.2")) throw new Exception("Release window version is incorrect.");
+            if (!process.MainWindowTitle.Contains("V0.0.3")) throw new Exception("Release window version is incorrect.");
             IntPtr root = process.MainWindowHandle;
             uint id = (uint)process.Id;
             Node inlineUpload = Button(root, "上传到 FTP", 0);

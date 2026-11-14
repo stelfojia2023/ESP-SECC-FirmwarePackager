@@ -52,7 +52,7 @@ namespace SeccFirmwarePackager
             feedback.AccessibleName = "地址定位结果";
             layout.Controls.Add(feedback, 0, 1);
             hex.Name = "HeaderHex"; hex.Dock = DockStyle.Fill; hex.ReadOnly = true; hex.WordWrap = false;
-            hex.DetectUrls = false; hex.HideSelection = false; hex.BackColor = Color.FromArgb(253, 252, 249);
+            hex.DetectUrls = false; hex.HideSelection = false; hex.BackColor = UiColors.Field;
             hex.ForeColor = UiColors.Ink; hex.Font = new Font("Consolas", 10F);
             hex.ScrollBars = RichTextBoxScrollBars.Both; hex.BorderStyle = BorderStyle.FixedSingle;
             hex.AccessibleName = "只读包头十六进制和 ASCII 内容";
@@ -127,14 +127,14 @@ namespace SeccFirmwarePackager
             int offset;
             if (!TryParseOffset(address.Text, out offset))
             {
-                feedback.ForeColor = Color.Firebrick;
+                feedback.ForeColor = UiColors.Error;
                 feedback.Text = "地址无效：请输入 0x0000 到 0x0FFF 的十六进制地址。";
                 address.Focus(); address.SelectAll(); return;
             }
             if (highlighted >= 0) { hex.Select(highlighted, 2); hex.SelectionBackColor = hex.BackColor; }
             int column = offset % 16;
             highlighted = hex.GetFirstCharIndexFromLine(offset / 16) + 6 + column * 3 + (column >= 8 ? 1 : 0);
-            hex.Select(highlighted, 2); hex.SelectionBackColor = Color.FromArgb(225, 213, 156);
+            hex.Select(highlighted, 2); hex.SelectionBackColor = UiColors.HeaderHighlight;
             hex.ScrollToCaret(); hex.Focus();
             feedback.ForeColor = UiColors.Ink;
             feedback.Text = "已定位 0x" + offset.ToString("X4", CultureInfo.InvariantCulture) + "，高亮为该地址的字节。";

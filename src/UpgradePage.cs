@@ -64,7 +64,7 @@ namespace SeccFirmwarePackager
             pathField.Controls.Add(dragHint); dragHint.BringToFront();
 
             Button browse = new RaisedButton { Name = "UpgradeBrowsePackage", Text = "选择升级 BIN", AccessibleName = "选择升级 BIN", Dock = DockStyle.Fill };
-            Style(browse, false);
+            Style(browse, false); browse.BackColor = UiColors.ButtonIcon;
             ((RaisedButton)browse).IconOnly = true; ((RaisedButton)browse).Glyph = ButtonGlyph.Folder;
             tooltips.SetToolTip(browse, "选择升级 BIN");
             browse.Click += delegate

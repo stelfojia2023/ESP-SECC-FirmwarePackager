@@ -122,9 +122,9 @@ internal static class ReleaseFtpDirectoryTests
             Node address = LabeledEdit(root, "URL");
             Node user = LabeledEdit(root, "用户名");
             Node password = LabeledEdit(root, "密码");
-            if (Digest(address.Text) != "7ef91abc146ce03ca586e530df0f03a4633df110ebb23e73a4271e5c5375f604" ||
-                Digest(user.Text) != "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" ||
-                Digest(password.Text) != "eb2f983bf53fe54df17ad96abf5ebd0bc414f9493647e244fc4c92f86ac11499" ||
+            if (address.Text != "" ||
+                user.Text != "" ||
+                password.Text != "" ||
                 SendNumber(password.Handle, 0x00D2, IntPtr.Zero, IntPtr.Zero) == IntPtr.Zero)
                 throw new Exception("Standalone FTP defaults or password masking are incorrect");
             using (FtpTests.Server server = new FtpTests.Server("release-user", "synthetic-secret", 226))
