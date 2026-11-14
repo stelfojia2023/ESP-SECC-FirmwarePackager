@@ -13,6 +13,8 @@ namespace SeccFirmwarePackager
     internal static class UiColors
     {
         public static readonly Color Canvas = Color.FromArgb(242, 241, 237);
+        public static readonly Color Card = Color.FromArgb(251, 250, 247);
+        public static readonly Color Field = Color.FromArgb(246, 245, 241);
         public static readonly Color Ink = Color.FromArgb(48, 51, 48);
         public static readonly Color Muted = Color.FromArgb(112, 114, 107);
         public static readonly Color Blue = Color.FromArgb(77, 105, 87);
@@ -50,7 +52,7 @@ namespace SeccFirmwarePackager
                     shift.Translate(1, 3); shadow.Transform(shift);
                     using (Brush shade = new SolidBrush(Color.FromArgb(18, 74, 72, 62))) e.Graphics.FillPath(shade, shadow);
                 }
-                using (Brush fill = new SolidBrush(Color.White)) e.Graphics.FillPath(fill, path);
+                using (Brush fill = new SolidBrush(UiColors.Card)) e.Graphics.FillPath(fill, path);
                 using (Pen border = new Pen(UiColors.Border)) e.Graphics.DrawPath(border, path);
             }
         }
@@ -63,13 +65,13 @@ namespace SeccFirmwarePackager
         public SoftField(TextBox box, bool multiline)
         {
             input = box;
-            BackColor = Color.White;
+            BackColor = UiColors.Field;
             Padding = multiline ? new Padding(9, 7, 9, 7) : new Padding(8, 5, 8, 3);
             Margin = new Padding(3, 3, 3, 3);
             DoubleBuffered = true;
             SetStyle(ControlStyles.ResizeRedraw, true);
             input.BorderStyle = BorderStyle.None;
-            input.BackColor = Color.White;
+            input.BackColor = UiColors.Field;
             input.Dock = DockStyle.Fill;
             input.Enter += delegate { Invalidate(); };
             input.Leave += delegate { Invalidate(); };
@@ -168,7 +170,7 @@ namespace SeccFirmwarePackager
             Text = "打包工具 · V0.0.1"; Name = "MainForm";
             MinimumSize = new Size(1100, 720);
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
-            Size = new Size(Math.Max(1100, Math.Min(1320, work.Width - 24)), Math.Max(720, Math.Min(980, work.Height - 24)));
+            Size = new Size(Math.Max(1100, Math.Min(1320, work.Width - 24)), Math.Max(720, Math.Min(820, work.Height - 24)));
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei UI", 9.5F); AutoScaleMode = AutoScaleMode.Dpi; BackColor = UiColors.Canvas;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch (Exception) { }
@@ -183,7 +185,7 @@ namespace SeccFirmwarePackager
             workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55)); workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
             workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 440));
             workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
-            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 340)); scroll.Controls.Add(workspace);
+            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 270)); scroll.Controls.Add(workspace);
             TableLayoutPanel inputs = CardLayout(5); inputs.Name = "InputsCard"; inputs.BackColor = UiColors.Canvas;
             for (int i = 0; i < 5; i++) inputs.RowStyles.Add(new RowStyle(SizeType.Percent, 20));
             workspace.Controls.Add(inputs, 0, 0);
@@ -194,12 +196,12 @@ namespace SeccFirmwarePackager
                 AddRow(staging, types[i], 1);
                 Control[] c = new Control[7]; for (int n = 0; n < 7; n++) c[n] = staging.GetControlFromPosition(n, 1);
                 SectionCard card = new SectionCard { Name = "FirmwareCard_" + types[i], Dock = DockStyle.Fill, Margin = new Padding(0, 0, 8, 6), Padding = new Padding(12, 8, 12, 10) };
-                TableLayoutPanel item = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 2, Margin = Padding.Empty, BackColor = Color.White };
-                item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68));
+                TableLayoutPanel item = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 2, Margin = Padding.Empty, BackColor = UiColors.Card };
+                item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94));
                 item.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); item.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
                 item.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
                 item.RowStyles.Add(new RowStyle(SizeType.Percent, 50)); item.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-                c[0].Font = new Font(Font.FontFamily, 12F, FontStyle.Bold); c[0].BackColor = Color.White; c[0].ForeColor = UiColors.Blue;
+                c[0].Font = new Font(Font.FontFamily, 12F, FontStyle.Bold); c[0].BackColor = UiColors.Card; c[0].ForeColor = UiColors.Blue;
                 item.Controls.Add(c[0], 0, 0); item.SetRowSpan(c[0], 2);
                 item.Controls.Add(c[1], 1, 0); item.SetColumnSpan(c[1], 2);
                 item.Controls.Add(c[2], 3, 0); item.Controls.Add(c[3], 3, 1);
@@ -263,17 +265,18 @@ namespace SeccFirmwarePackager
             grid.Name = "PreviewGrid"; grid.Dock = DockStyle.Fill; grid.ReadOnly = true;
             grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.AllowUserToResizeRows = false;
             grid.RowHeadersVisible = false; grid.ColumnHeadersVisible = false; grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            grid.BorderStyle = BorderStyle.None; grid.BackgroundColor = Color.White; grid.GridColor = UiColors.Border;
+            grid.BorderStyle = BorderStyle.None; grid.BackgroundColor = UiColors.Card; grid.GridColor = UiColors.Border;
             grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal; grid.RowTemplate.Height = 27; grid.ScrollBars = ScrollBars.Horizontal;
             grid.DefaultCellStyle.SelectionBackColor = UiColors.SoftBlue; grid.DefaultCellStyle.SelectionForeColor = UiColors.Ink;
+            grid.DefaultCellStyle.BackColor = UiColors.Card;
             grid.Columns.Add("Type", "类型"); grid.Columns.Add("Name", "文件路径"); grid.Columns.Add("Size", "大小"); grid.Columns.Add("Offset", "偏移");
             grid.Columns[0].FillWeight = 40; grid.Columns[1].FillWeight = 240; grid.Columns[2].FillWeight = 100; grid.Columns[3].FillWeight = 70;
             grid.Columns[0].DefaultCellStyle.BackColor = UiColors.SoftBlue;
             previewCard = new SectionCard { Name = "PreviewCard", Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 4), Padding = new Padding(14, 10, 14, 12), Visible = false };
             previewCard.Controls.Add(grid); workspace.Controls.Add(previewCard, 0, 1); workspace.SetColumnSpan(previewCard, 2);
-            SectionCard result = new SectionCard { Name = "OperationResultCard", Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
+            SectionCard result = new SectionCard { Name = "OperationResultCard", Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0), Padding = new Padding(14, 8, 14, 10) };
             TableLayoutPanel resultBody = CardLayout(2); resultBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); resultBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            TableLayoutPanel resultHeading = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty, BackColor = Color.White };
+            TableLayoutPanel resultHeading = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty, BackColor = UiColors.Card };
             resultHeading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); resultHeading.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
             resultHeading.Controls.Add(TitleLabel("操作结果"), 0, 0);
             headerView.Name = "HeaderViewButton"; headerView.Text = "查看包头"; headerView.Enabled = false; headerView.Dock = DockStyle.Fill; headerView.Margin = Padding.Empty;
@@ -281,7 +284,7 @@ namespace SeccFirmwarePackager
             resultHeading.Controls.Add(headerView, 1, 0); resultBody.Controls.Add(resultHeading, 0, 0);
             details.Name = "ResultDetails"; details.Multiline = true; details.ReadOnly = true; details.ScrollBars = ScrollBars.Both;
             details.WordWrap = false; details.Text = "";
-            resultBody.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill }, 0, 1); result.Controls.Add(resultBody);
+            resultBody.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill, Padding = new Padding(9, 5, 9, 5) }, 0, 1); result.Controls.Add(resultBody);
             workspace.Controls.Add(result, 0, 2); workspace.SetColumnSpan(result, 2);
             RefreshPreview();
         }
@@ -292,16 +295,16 @@ namespace SeccFirmwarePackager
         { StyleButton(b, primary, false); b.Size = new Size(180, 40); b.Anchor = AnchorStyles.Right | AnchorStyles.Top; }
         private static Control RightActions(params Button[] buttons)
         {
-            // All primary action rows share two equal tracks; a single action occupies
-            // the right track, so upload aligns with load and package generation.
-            TableLayoutPanel p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
-            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); p.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            // Keep action buttons compact and aligned across the three cards.
+            TableLayoutPanel p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty, BackColor = UiColors.Card };
+            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            p.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 186));
+            p.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 186)); p.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             for (int i = 0; i < buttons.Length; i++)
             {
                 buttons[i].Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
                 buttons[i].Margin = new Padding(3, 5, 3, 3);
-                p.Controls.Add(buttons[i], buttons.Length == 1 ? 1 : i, 0);
+                p.Controls.Add(buttons[i], buttons.Length == 1 ? 2 : i + 1, 0);
             }
             return p;
         }
@@ -354,7 +357,7 @@ namespace SeccFirmwarePackager
             TableLayoutPanel layout = new TableLayoutPanel();
             layout.Dock = DockStyle.Fill;
             layout.Margin = Padding.Empty;
-            layout.BackColor = Color.White;
+            layout.BackColor = UiColors.Card;
             layout.ColumnCount = 1;
             layout.RowCount = rows;
             return layout;
@@ -363,7 +366,7 @@ namespace SeccFirmwarePackager
         private static void StyleTextBox(TextBox box, bool readOnly)
         {
             box.BorderStyle = BorderStyle.FixedSingle;
-            box.BackColor = readOnly ? Color.FromArgb(245, 249, 254) : Color.White;
+            box.BackColor = UiColors.Field;
             box.ForeColor = UiColors.Ink;
         }
 
@@ -418,6 +421,15 @@ namespace SeccFirmwarePackager
             pathField.AllowDrop = true;
             pathField.DragEnter += InputDragEnter;
             pathField.DragDrop += delegate(object sender, DragEventArgs e) { InputDragDrop(row, e); };
+            Label dragHint = new Label { Name = "DragHint_" + type, Text = "拖入 BIN 或粘贴路径", Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiColors.Muted, BackColor = UiColors.Field, AutoEllipsis = true, AllowDrop = true };
+            dragHint.Click += delegate { row.PathBox.Focus(); };
+            dragHint.DragEnter += InputDragEnter;
+            dragHint.DragDrop += delegate(object sender, DragEventArgs e) { InputDragDrop(row, e); };
+            pathField.Controls.Add(dragHint);
+            dragHint.BringToFront();
+            EventHandler updateDragHint = delegate { dragHint.Visible = String.IsNullOrWhiteSpace(row.PathBox.Text); };
+            row.PathBox.TextChanged += updateDragHint;
             table.Controls.Add(pathField, 1, index);
             Button select = new RaisedButton();
             select.Name = "Select_" + type;

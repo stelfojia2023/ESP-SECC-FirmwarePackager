@@ -187,6 +187,14 @@ internal static class GuiSmokeTests
                             throw new Exception("Multiple files must not be accepted by one input");
                         if (!pathBox.Parent.AllowDrop || SendDrag(pathBox.Parent, "OnDragEnter", new[] { input }).Effect != DragDropEffects.Copy)
                             throw new Exception("The entire path field must accept a file drop");
+                        Label dragHint = Find<Label>(form, "DragHint_M4");
+                        if (!dragHint.Visible || !dragHint.AllowDrop ||
+                            SendDrag(dragHint, "OnDragEnter", new[] { input }).Effect != DragDropEffects.Copy ||
+                            SendDrag(dragHint, "OnDragEnter", new[] { input, input }).Effect != DragDropEffects.None)
+                            throw new Exception("Visible drag prompt must accept exactly one file");
+                        SendDrag(dragHint, "OnDragDrop", new[] { input });
+                        if (pathBox.Text != input || dragHint.Visible)
+                            throw new Exception("Drop on visible prompt did not populate the input");
                         SendDrag(pathBox, "OnDragDrop", new[] { input });
                         if (pathBox.Text != input || Find<TextBox>(form, "Name_M4").Text != Path.GetFileNameWithoutExtension(input))
                             throw new Exception("Drop did not populate path and default name");

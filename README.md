@@ -1,6 +1,6 @@
 > FTP 现在既可默认上传刚生成的联合包（上传前校验），也可独立选择任意本地文件直接上传。
 > **界面试用 V0.0.1**：暖灰白卡片、分组操作、动态文件列表、内嵌 FTP 操作区与默认启用音效。[改动与验证边界](docs/UI-V0.0.1.md)。工具版本与包格式 V1 独立。
-> `dist/FirmwarePackager.exe` 为 Windows 原生构建的 x64 试用产物；构建与日志见 Actions 的 `FirmwarePackager-V0.0.1-windows` 产物。真实 Windows GUI/拖放/DPI/音效体验尚需实机确认。
+> `dist/FirmwarePackager.exe` 为 Windows 原生构建的 x64 试用产物。本轮已在 Windows 10 验证紧凑布局、真实拖放与单文件运行；见 [紧凑界面验证记录](docs/紧凑界面验证.md)。其他 Windows 版本、缩放比例及音效听感仍需实机确认。
 
 # ESP-SECC 固件联合打包工具 V0.0.1
 

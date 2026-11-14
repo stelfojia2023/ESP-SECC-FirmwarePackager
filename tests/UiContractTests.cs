@@ -16,6 +16,55 @@ internal static class UiContractTests
         return null;
     }
     private static Control Find(Control root, string name) { return FindTree(root, name); }
+    private static void CheckCompactLayout(Form form)
+    {
+        Control typeCard = Find(form, "FirmwareCard_ESP32");
+        Label type = null;
+        foreach (Control c in typeCard.Controls[0].Controls)
+            if (c is Label && c.Text == "ESP32") type = (Label)c;
+        Assert(type != null, "ESP32 label exists");
+        Size textSize = TextRenderer.MeasureText(type.Text, type.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+        Assert(type.ClientSize.Width >= textSize.Width + 4 && type.ClientSize.Height >= textSize.Height, "ESP32 fits on one line");
+        using (Font enlarged = new Font(type.Font.FontFamily, type.Font.Size * 1.25F, type.Font.Style))
+        {
+            Size larger = TextRenderer.MeasureText(type.Text, enlarged, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+            Assert(type.ClientSize.Width >= larger.Width + 4, "ESP32 has room for enlarged text");
+        }
+        int buttonWidth = Find(form, "AutoLoadButton").Width;
+        foreach (string name in new[] { "AutoLoadButton", "ClearAllButton", "OpenVerifyButton", "BuildButton", "FtpUploadButton" })
+        {
+            Control button = Find(form, name);
+            Size caption = TextRenderer.MeasureText(button.Text, button.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+            Assert(Math.Abs(button.Width - buttonWidth) <= 1 && button.Width <= button.Height * 5, "compact uniform action " + name);
+            Assert(button.ClientSize.Width >= caption.Width + 12 && button.Parent.ClientRectangle.Contains(button.Bounds), "action caption and hit area fit " + name);
+        }
+        TextBox result = (TextBox)Find(form, "ResultDetails");
+        Assert(result.ClientSize.Height >= result.Font.Height * 10, "compact results still show ten lines: actual=" + result.ClientSize.Height + ", required=" + result.Font.Height * 10);
+    }
+    private static void TestUiRefinement(Form form)
+    {
+        Color canvas = form.BackColor;
+        Control card = Find(form, "FirmwareCard_PFC");
+        Color cardColor = card.Controls[0].BackColor;
+        Color fieldColor = Find(form, "Path_PFC").BackColor;
+        Assert(cardColor.R > fieldColor.R && fieldColor.R > canvas.R && cardColor.R < 255, "warm, distinct card and field layers");
+        Assert(cardColor.R >= cardColor.G && cardColor.G >= cardColor.B && fieldColor.R >= fieldColor.G && fieldColor.G >= fieldColor.B, "card and field are warm neutrals");
+        foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
+        {
+            TextBox path = (TextBox)Find(form, "Path_" + type);
+            Control hint = Find(form, "DragHint_" + type);
+            Assert(path.Text == "" && path.ReadOnly && path.AllowDrop, "empty path retains selection behavior " + type);
+            Assert(hint != null && hint.Visible && hint.AllowDrop && hint.Parent == path.Parent &&
+                hint.Text == "拖入 BIN 或粘贴路径", "visible drag prompt accepts drops " + type);
+            Assert(hint.Width >= 80 && hint.Height >= hint.Font.Height &&
+                hint.Parent.GetChildAtPoint(new Point(hint.Left + hint.Width / 2, hint.Top + hint.Height / 2)) == hint,
+                "drag prompt is visible above the input " + type + " hint=" + hint.Bounds + " input=" + path.Bounds);
+        }
+        CheckCompactLayout(form);
+        Size original = form.Size;
+        try { form.Size = form.MinimumSize; form.PerformLayout(); Application.DoEvents(); CheckCompactLayout(form); }
+        finally { form.Size = original; form.PerformLayout(); Application.DoEvents(); }
+    }
     private static void TestFilenameWorkflow(Form form, string work)
     {
         Type t = form.GetType();
@@ -32,6 +81,7 @@ internal static class UiContractTests
         File.WriteAllBytes(Path.Combine(folder, "nested", "PLC_V9.bin"), new byte[] { 1 });
         load.Invoke(form, new object[] { folder });
         Assert(Find(form, "Path_PFC").Text == pfc && Find(form, "Name_PFC").Text == "pfc_board_v23_release" && Find(form, "Version_PFC").Text == "v23", "batch recognizes stem and preserves version case");
+        Assert(!Find(form, "DragHint_PFC").Visible, "selected file replaces drag prompt");
         Assert(Find(form, "Path_M4").Text == "" && Find(form, "Path_PLC").Text == "", "batch ignores wrong extension and nested files");
         File.WriteAllBytes(Path.Combine(folder, "PFC_other_V99.bin"), new byte[] { 1 });
         Find(form, "Path_LLC").Text = pfc; Find(form, "Name_LLC").Text = "old LLC"; Find(form, "Version_LLC").Text = "Vold";
@@ -82,6 +132,8 @@ internal static class UiContractTests
         foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
             foreach (string prefix in new[] { "Path_", "Name_", "Version_" })
                 Assert(Find(form, prefix + type).Text == "", "clear all resets " + prefix + type);
+        foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
+            Assert(Find(form, "DragHint_" + type).Visible, "drag prompt returns after clear " + type);
         Assert(((DataGridView)Find(form, "PreviewGrid")).Rows.Count == 0, "clear all removes preview rows");
         Assert(File.Exists(pfc) && File.Exists(manual) && File.Exists(noVersion), "clear all does not delete files");
     }
@@ -165,6 +217,7 @@ internal static class UiContractTests
                 PropertyInfo enabled = sounds.GetType().GetProperty("Enabled");
                 Assert((bool)enabled.GetValue(sounds, null), "sound enabled by default");
                 enabled.SetValue(sounds, false, null); // Test isolation only; not a user control.
+                TestUiRefinement(form);
                 Control ftpPanel = Find(form, "FtpInlinePanel");
                 Control resultCard = Find(form, "OperationResultCard");
                 Assert(ftpPanel != null && ftpPanel.Visible && resultCard != null, "inline FTP and result card visible");
