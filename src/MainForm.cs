@@ -421,7 +421,7 @@ namespace SeccFirmwarePackager
         {
             UiColors.Apply(AppearanceSettings.Load());
             upgradePage = new UpgradePage();
-            Text = "打包工具 · V0.0.4"; Name = "MainForm";
+            Text = "打包工具 · V0.0.5"; Name = "MainForm";
             MinimumSize = new Size(1100, 720);
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
             Size = new Size(Math.Max(1100, Math.Min(1320, work.Width - 24)), Math.Max(720, Math.Min(792, work.Height - 24)));

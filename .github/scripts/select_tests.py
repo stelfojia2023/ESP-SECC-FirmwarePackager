@@ -42,7 +42,7 @@ PATH_GROUPS = {
 }
 
 
-def select(paths, force_full=False):
+def select(paths, force_full=False, manifest_version_only=False):
     """Return the union of affected groups; unknown or empty inputs run all."""
     if force_full or not paths:
         return FULL
@@ -50,6 +50,8 @@ def select(paths, force_full=False):
     for path in paths:
         if path in PATH_GROUPS:
             selected.update(PATH_GROUPS[path])
+        elif path == "app.manifest" and manifest_version_only:
+            selected.update(("header", "ui", "appearance", "typography", "desktop"))
         elif path.endswith(".md"):
             continue
         elif path.startswith("test-vectors/"):
@@ -59,6 +61,22 @@ def select(paths, force_full=False):
         else:
             return FULL
     return frozenset(selected)
+
+
+def manifest_only_changes_version(repo, base, include_worktree=False):
+    """Allow a narrow selection only when the manifest differs solely by identity version."""
+    try:
+        old = subprocess.check_output(["git", "show", base + ":app.manifest"], cwd=repo, stderr=subprocess.PIPE)
+        if include_worktree:
+            new = (Path(repo) / "app.manifest").read_bytes()
+        else:
+            new = subprocess.check_output(["git", "show", "HEAD:app.manifest"], cwd=repo, stderr=subprocess.PIPE)
+        pattern = rb'(<assemblyIdentity\s+version=")[^"]+(")'
+        old_normalized, old_count = re.subn(pattern, rb'\g<1>VERSION\2', old)
+        new_normalized, new_count = re.subn(pattern, rb'\g<1>VERSION\2', new)
+        return old != new and old_count == new_count == 1 and old_normalized == new_normalized
+    except (OSError, subprocess.CalledProcessError):
+        return False
 
 
 def event_base(event_name, event):
@@ -104,7 +122,8 @@ def from_event(repo, event_name, event):
         paths = changed_paths(repo, base)
     except (OSError, subprocess.CalledProcessError):
         return FULL, "unable to determine changed files"
-    return select(paths), "effective diff" if paths else "empty diff"
+    version_only = "app.manifest" in paths and manifest_only_changes_version(repo, base)
+    return select(paths, manifest_version_only=version_only), "effective diff" if paths else "empty diff"
 
 
 def main():
@@ -114,7 +133,9 @@ def main():
     args = parser.parse_args()
     if args.base:
         try:
-            groups = select(changed_paths(args.repo, args.base, include_worktree=True))
+            paths = changed_paths(args.repo, args.base, include_worktree=True)
+            version_only = "app.manifest" in paths and manifest_only_changes_version(args.repo, args.base, True)
+            groups = select(paths, manifest_version_only=version_only)
             reason = "effective diff"
         except (OSError, subprocess.CalledProcessError):
             groups, reason = FULL, "unable to determine changed files"

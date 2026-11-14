@@ -30,6 +30,41 @@ class SelectionTests(unittest.TestCase):
     def test_ui_changes_cover_appearance_and_font(self):
         selected = scope.select(["src/MainForm.cs"])
         self.assertEqual(selected, {"header", "ui", "appearance", "typography", "desktop"})
+        self.assertEqual(scope.select(["app.manifest"]), scope.FULL)
+        self.assertEqual(scope.select(["app.manifest"], manifest_version_only=True), selected)
+
+    def test_document_pr_with_version_updates_selects_only_relevant_groups(self):
+        paths = ["README.md", "src/MainForm.cs", "src/UiControls.cs", "app.manifest",
+                 "tests/UiContractTests.cs", "tests/GuiSmokeTests.cs", "tests/ReleaseUiTests.cs"]
+        self.assertEqual(scope.select(paths, manifest_version_only=True),
+                         {"header", "ui", "appearance", "typography", "desktop"})
+        self.assertEqual(scope.select(paths), scope.FULL)
+
+    def test_manifest_version_only_is_verified_against_base(self):
+        with tempfile.TemporaryDirectory(prefix="ci-manifest-") as tmp:
+            root = Path(tmp)
+            def git(*args):
+                return subprocess.check_output(["git", "-c", "user.name=CI Test", "-c",
+                    "user.email=ci-test@example.invalid", *args], cwd=root, stderr=subprocess.STDOUT)
+            git("init", "-q")
+            manifest = root / "app.manifest"
+            manifest.write_text('<assemblyIdentity version="0.0.4.0" /><dpi>system</dpi>', encoding="utf-8")
+            git("add", ".")
+            git("commit", "-qm", "base")
+            base = git("rev-parse", "HEAD").decode().strip()
+            manifest.write_text('<assemblyIdentity version="0.0.5.0" /><dpi>system</dpi>', encoding="utf-8")
+            self.assertTrue(scope.manifest_only_changes_version(root, base, True))
+            git("add", ".")
+            git("commit", "-qm", "version")
+            self.assertTrue(scope.manifest_only_changes_version(root, base))
+            event = {"pull_request": {"base": {"sha": base}}}
+            self.assertEqual(scope.from_event(root, "pull_request", event)[0],
+                             {"header", "ui", "appearance", "typography", "desktop"})
+            manifest.write_text('<assemblyIdentity version="0.0.5.0" /><dpi>changed</dpi>', encoding="utf-8")
+            self.assertFalse(scope.manifest_only_changes_version(root, base, True))
+            git("add", ".")
+            git("commit", "-qm", "configuration")
+            self.assertEqual(scope.from_event(root, "pull_request", event)[0], scope.FULL)
 
     def test_tests_and_fixtures_select_their_own_suites(self):
         self.assertEqual(scope.select(["tests/FtpTests.cs"]), {"ftp", "desktop"})
