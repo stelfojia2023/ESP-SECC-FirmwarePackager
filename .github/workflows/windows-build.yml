@@ -50,6 +50,19 @@ jobs:
           python tests/test_release_publisher.py
           if ($LASTEXITCODE) { throw 'Release publisher safeguards failed' }
           Get-FileHash dist/FirmwarePackager.exe | Format-List | Out-File evidence/ci/SHA256.txt
+      - name: Native font and DPI diagnostics
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /win32manifest:app.manifest /out:TypographyAwareTests.exe tests/TypographyTests.cs
+          if ($LASTEXITCODE) { throw 'Typography aware compile failed' }
+          & ./TypographyAwareTests.exe dist/FirmwarePackager.exe evidence/ci/typography-aware
+          if ($LASTEXITCODE) { throw 'Typography aware diagnostics failed' }
+          & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Core.dll /nowin32manifest /out:TypographyBaselineTests.exe tests/TypographyTests.cs
+          if ($LASTEXITCODE) { throw 'Typography baseline compile failed' }
+          & ./TypographyBaselineTests.exe dist/FirmwarePackager.exe evidence/ci/typography-baseline
+          if ($LASTEXITCODE) { throw 'Typography baseline diagnostics failed' }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -79,3 +92,4 @@ jobs:
           RELEASE_SOURCE_SHA: ${{ github.sha }}
           RELEASE_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: python3 .github/scripts/publish_release.py
+
