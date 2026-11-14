@@ -94,7 +94,14 @@ internal static class UiContractTests
                                 "button text fits simulated DPI " + dpi + "/" + i);
                         }
                         PaintSkinControl(button, bitmap);
-                        Assert(bitmap.GetPixel(0, 0).ToArgb() == colors["Canvas"].ToArgb(), "button paint stays inside corner bounds " + dpi + "/" + i);
+                        using (Bitmap parentSurface = new Bitmap(card.Width, card.Height))
+                        {
+                            parentSurface.SetResolution(dpi, dpi); PaintSkinControl(card, parentSurface);
+                            Color expected = parentSurface.GetPixel(button.Left, button.Top);
+                            Color actual = bitmap.GetPixel(0, 0);
+                            Assert(Math.Abs(actual.R - expected.R) <= 2 && Math.Abs(actual.G - expected.G) <= 2 && Math.Abs(actual.B - expected.B) <= 2,
+                                "button corner preserves actual parent surface " + dpi + "/" + i);
+                        }
                         bitmap.Save(Path.Combine(work, "skin-button-" + i + "-simulated-" + dpi + "dpi.png"));
                     }
                 }
@@ -207,10 +214,17 @@ internal static class UiContractTests
     {
         Color canvas = form.BackColor;
         Control card = Find(form, "FirmwareCard_PFC");
-        Color cardColor = card.Controls[0].BackColor;
+        Type tokens = form.GetType().Assembly.GetType("SeccFirmwarePackager.UiColors", true);
+        Color cardColor = SkinColor(tokens, "Card");
         Color fieldColor = Find(form, "Path_PFC").BackColor;
-        Assert(cardColor.R > fieldColor.R && fieldColor.R > canvas.R && cardColor.R < 255, "warm, distinct card and field layers");
-        Assert(cardColor.R >= cardColor.G && cardColor.G >= cardColor.B && fieldColor.R >= fieldColor.G && fieldColor.G >= fieldColor.B, "card and field are warm neutrals");
+        Assert(canvas.ToArgb() == SkinColor(tokens, "Canvas").ToArgb() && fieldColor.ToArgb() == SkinColor(tokens, "Field").ToArgb(),
+            "actual canvas and field use silver skin tokens");
+        Assert(Luminance(cardColor) > Luminance(fieldColor) && Luminance(fieldColor) > Luminance(canvas),
+            "silver card, field and canvas retain distinct lightness layers");
+        foreach (Color surface in new[] { canvas, cardColor, fieldColor })
+            Assert(Math.Max(surface.R, Math.Max(surface.G, surface.B)) - Math.Min(surface.R, Math.Min(surface.G, surface.B)) <= 16,
+                "silver surfaces remain low-chroma neutrals");
+        Assert(card.Controls[0].BackColor.A == 0, "card inner layout preserves parent gradient instead of opaque flat fill");
         foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
         {
             TextBox path = (TextBox)Find(form, "Path_" + type);
