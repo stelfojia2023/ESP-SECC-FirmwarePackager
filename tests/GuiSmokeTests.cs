@@ -167,11 +167,11 @@ internal static class GuiSmokeTests
                         string output = Path.Combine(workDir, "联合 固件 包.bin");
                         if (!form.Text.Contains("V0.0.1")) throw new Exception("Tool version must be independent from package format V1");
                         if (form.Controls.Find("BrandHeader", true).Length != 0) throw new Exception("Redundant brand banner must not be present");
-                        CheckBox sound = Find<CheckBox>(form, "SoundEnabled");
-                        sound.Checked = false; // Tests must not depend on an audio device.
+                        if (form.Controls.Find("SoundEnabled", true).Length != 0) throw new Exception("Sound selector must not be present");
                         FieldInfo soundsField = typeof(MainForm).GetField("sounds", BindingFlags.Instance | BindingFlags.NonPublic);
                         UiSounds feedback = (UiSounds)soundsField.GetValue(form);
-                        if (feedback.Enabled) throw new Exception("Mute switch did not disable audio feedback");
+                        if (!feedback.Enabled) throw new Exception("Audio feedback must be enabled by default");
+                        feedback.Enabled = false; // Test isolation only.
                         if (Find<DataGridView>(form, "PreviewGrid").Visible || Find<Control>(form, "FtpAddress").Visible)
                             throw new Exception("Technical detail and FTP must start collapsed");
                         Find<Button>(form, "PreviewToggle").PerformClick();
@@ -308,4 +308,3 @@ internal static class GuiSmokeTests
         return result;
     }
 }
-

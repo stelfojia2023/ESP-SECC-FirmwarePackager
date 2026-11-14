@@ -1,5 +1,5 @@
 > FTP 现在既可默认上传刚生成的联合包（上传前校验），也可独立选择任意本地文件直接上传。
-> **界面试用 V0.0.1**：暖灰白卡片、分组操作、可折叠详情、FTP 弹窗与可关闭音效。[改动与验证边界](docs/UI-V0.0.1.md)。工具版本与包格式 V1 独立。
+> **界面试用 V0.0.1**：暖灰白卡片、分组操作、可折叠详情、FTP 弹窗与默认启用音效。[改动与验证边界](docs/UI-V0.0.1.md)。工具版本与包格式 V1 独立。
 > 本分支 `dist/FirmwarePackager.exe` 为 Mono 交叉编译 Windows x64 试用产物；Windows 原生构建与日志见 Actions 的 `FirmwarePackager-V0.0.1-windows` 产物。真实 Windows GUI/拖放/DPI/音效体验尚需实机确认。
 
 # ESP-SECC 固件联合打包工具 V0.0.1
@@ -64,4 +64,3 @@ python .\tests\verify_vector.py .\test-vectors
 ```
 
 测试会创建自己的新临时目录，不覆盖已有测试证据。请不要把测试数据误当成正式固件。
-

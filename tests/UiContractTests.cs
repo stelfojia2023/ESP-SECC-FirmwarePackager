@@ -55,8 +55,11 @@ internal static class UiContractTests
                 foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
                     foreach (string prefix in new[] { "Path_", "Name_", "Version_", "Size_", "Select_", "Clear_" })
                         Assert(Find(form, prefix + type) != null, "retained input " + prefix + type);
-                CheckBox mute = (CheckBox)Find(form, "SoundEnabled"); mute.Checked = false;
-                Assert(!mute.Checked, "mute is visible and operable");
+                Assert(Find(form, "SoundEnabled") == null, "no sound selector");
+                object sounds = form.GetType().GetField("sounds", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
+                PropertyInfo enabled = sounds.GetType().GetProperty("Enabled");
+                Assert((bool)enabled.GetValue(sounds, null), "sound enabled by default");
+                enabled.SetValue(sounds, false, null); // Test isolation only; not a user control.
                 Control grid = Find(form, "PreviewGrid");
                 Assert(!grid.Visible && !Ftp(form).Visible, "preview collapsed and FTP closed initially");
                 Button preview = (Button)Find(form, "PreviewToggle");

@@ -183,18 +183,12 @@ namespace SeccFirmwarePackager
                 Padding = new Padding(22, 12, 22, 16), Margin = Padding.Empty };
             body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
             body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
-            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+            body.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
             body.RowStyles.Add(new RowStyle(SizeType.Absolute, 560));
             body.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
             body.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
             body.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
             scroll.Controls.Add(body);
-
-            FlowLayoutPanel toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Margin = Padding.Empty };
-            CheckBox sound = new CheckBox { Name = "SoundEnabled", Text = "音效", Checked = true, AutoSize = true, Margin = new Padding(8, 4, 4, 0) };
-            sound.CheckedChanged += delegate { sounds.Enabled = sound.Checked; };
-            toolbar.Controls.Add(sound);
-            body.Controls.Add(toolbar, 0, 0); body.SetColumnSpan(toolbar, 2);
 
             SectionCard inputsCard = new SectionCard { Name = "InputsCard", Dock = DockStyle.Fill, Margin = new Padding(0, 0, 12, 12) };
             body.Controls.Add(inputsCard, 0, 1);
@@ -896,4 +890,3 @@ namespace SeccFirmwarePackager
         }
     }
 }
-
