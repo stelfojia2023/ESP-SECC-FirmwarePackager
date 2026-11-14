@@ -21,3 +21,7 @@ TypographyTests枚举实际安装的Microsoft YaHei UI、Microsoft YaHei、DengX
 - https://learn.microsoft.com/en-us/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows
 - https://learn.microsoft.com/en-us/windows/win32/sbscs/application-manifests
 - https://learn.microsoft.com/en-us/dotnet/desktop/winforms/high-dpi-support-in-windows-forms
+
+## 主线验证结果与现行规范
+
+本项已合入主线 f97b38402e31b68fce32c7cabe24ebb90f845596。Windows CI 43591687847通过，独立启动生产EXE并查询到System DPI aware。CI实际96 DPI；微软雅黑UI已安装，不属于缺失字体导致的家族回退。用户反馈本版清晰很多，但没有实测其显示配置。字号没有放大，125%/150%系统显示设置切换仍未验证。后续新增界面请遵循[字体与文字清晰度规范](字体规范.md)，不要把字体对照样张的候选字号当作生产现状。
