@@ -21,7 +21,7 @@ namespace SeccFirmwarePackager
         public HeaderViewer(byte[] header)
         {
             string formatted = FormatHex(header);
-            Text = "联合包包头 · 4096 字节";
+            Text = "";
             Name = "HeaderViewer";
             Font = new Font("Microsoft YaHei UI", 9F);
             BackColor = UiColors.Canvas;

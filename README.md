@@ -1,6 +1,6 @@
 > FTP 支持上传文件并查看目标目录；启动时填入指定的默认地址、用户名和密码，均可修改。
 > **界面试用 V0.0.1**：暖灰白卡片、分组操作、动态文件列表、内嵌 FTP 操作区与默认启用音效。[改动与验证边界](docs/UI-V0.0.1.md)。工具版本与包格式 V1 独立。
-> `dist/FirmwarePackager.exe` 为 Windows 原生构建的 x64 试用产物。FTP 目录查看的验证范围见 [FTP 目录查看验证](docs/FTP目录查看验证.md)。
+> `dist/FirmwarePackager.exe` 为 Windows 原生构建的 x64 试用产物。最新构建验证见 [包头标题验证](docs/包头标题验证.md)；[FTP 目录查看验证](docs/FTP目录查看验证.md) 记录上一版的 FTP 测试。
 
 # ESP-SECC 固件联合打包工具 V0.0.1
 

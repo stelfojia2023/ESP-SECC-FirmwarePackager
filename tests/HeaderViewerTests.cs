@@ -110,6 +110,7 @@ internal static class HeaderViewerTests
             using (HeaderViewer form = new HeaderViewer(header))
             {
                 form.Show(); Application.DoEvents();
+                Assert(form.Text == "", "header viewer title is empty");
                 TextBox address = (TextBox)form.Controls.Find("HeaderOffset", true)[0];
                 RichTextBox hex = (RichTextBox)form.Controls.Find("HeaderHex", true)[0];
                 Assert(hex.ReadOnly && !hex.WordWrap, "read-only non-wrapping hex");

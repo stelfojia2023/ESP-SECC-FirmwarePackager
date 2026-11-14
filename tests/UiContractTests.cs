@@ -240,6 +240,7 @@ internal static class UiContractTests
                 try
                 {
                     RichTextBox hex = (RichTextBox)Find(viewer, "HeaderHex");
+                    Assert(viewer.Text == "", "header viewer has no title text");
                     Assert(viewer.Modal && hex != null && hex.ReadOnly && hex.Lines.Length == 256, "header button opens read-only full header");
                     int glyph = TextRenderer.MeasureText("|", hex.Font, Size.Empty,
                         TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;

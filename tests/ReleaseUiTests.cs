@@ -124,6 +124,22 @@ internal static class ReleaseUiTests
         return found;
     }
 
+    private static IntPtr UntitledHeaderDialog(uint processId)
+    {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr h, IntPtr ignored)
+        {
+            uint owner;
+            GetWindowThreadProcessId(h, out owner);
+            if (owner != processId || !IsWindowVisible(h)) return true;
+            StringBuilder title = new StringBuilder(1024);
+            GetWindowText(h, title, title.Capacity);
+            if (title.Length == 0 && ContainsText(h, "SECCPKG1")) { found = h; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
     private static void ChooseFile(uint processId, string title, string filePath)
     {
         IntPtr dialog = IntPtr.Zero;
@@ -329,7 +345,10 @@ internal static class ReleaseUiTests
             WaitUntil(delegate { return File.Exists(output) && ContainsText(root, "打包并校验成功"); }, "Build did not finish in the release GUI.");
             if (Packager.VerifyFile(output).Entries.Count != 1) throw new Exception("GUI-generated package is invalid.");
             Click(Button(root, "查看包头", 0).Handle);
-            DismissError(id, "联合包包头 · 4096 字节", "SECCPKG1");
+            IntPtr header = IntPtr.Zero;
+            WaitUntil(delegate { header = UntitledHeaderDialog(id); return header != IntPtr.Zero; }, "Untitled header dialog did not appear.");
+            if (!PostMessage(header, WM_CLOSE, IntPtr.Zero, IntPtr.Zero)) throw new Exception("Could not close header dialog.");
+            WaitUntil(delegate { return UntitledHeaderDialog(id) == IntPtr.Zero; }, "Header dialog did not close.");
             if (args.Length == 3)
             {
                 string previous = Path.GetFullPath(args[2]);
