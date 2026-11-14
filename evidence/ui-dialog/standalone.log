@@ -1,5 +1,0 @@
-Native drag start=95,76 cursor=95,76 source-pid=299640 pointer-pid=299640 foreground=True source-active=True
-Native drag mouse-down event received; source=95,76 target=786,486
-Native drag mouse-up sent
-Native drag result=Copy
-PASS delivered EXE: help, native file drag, browse, default name, missing-version error, save, generate, header dialog, open, verify, previous V1 sample and corrupted-file error

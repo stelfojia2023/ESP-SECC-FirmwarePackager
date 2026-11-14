@@ -1,6 +1,0 @@
-PASS 31 nonempty combinations, alignment, extraction and hashes
-PASS 5,628 KiB budget vector and all five expected offsets
-PASS corruption, structural rejection, firmware/whole MD5, padding and truncation
-PASS invalid input, limits, budget warning, safe output and UTF-8 limits
-PASS assertions=260525
-PASS visible WinForms UI: input fields, pre-build preview, generate button, display and verify

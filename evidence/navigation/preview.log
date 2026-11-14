@@ -1,5 +1,0 @@
-PageNavigation: visible=True bounds={X=0,Y=0,Width=984,Height=44} font=9.5 bold=False
-PackPageTab: visible=True bounds={X=18,Y=2,Width=180,Height=40} font=10.5 bold=False
-UpgradePageTab: visible=True bounds={X=206,Y=2,Width=180,Height=40} font=10.5 bold=True
-HelpButton: visible=True bounds={X=394,Y=2,Width=130,Height=40} font=10.5 bold=False
-UpgradePackageCard: visible=True bounds={X=18,Y=4,Width=948,Height=140} font=9.5 bold=False

@@ -1,4 +1,0 @@
-PASS FTP address parsing, credential masking and encoded characters
-PASS loopback FTP: 226 success and byte match, auth failure, write refusal, final 451 failure and invalid package
-PASS ordinary FTP files: non-BIN, empty, >6 MiB, exact bytes, 226/250, 530/550/451, unreadable and package-path isolation
-PASS FTP assertions=62
