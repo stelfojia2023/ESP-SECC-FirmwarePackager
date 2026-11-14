@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -60,9 +61,9 @@ namespace SeccFirmwarePackager
 
     internal sealed class SoftField : Panel
     {
-        private readonly TextBox input;
+        private readonly TextBoxBase input;
 
-        public SoftField(TextBox box, bool multiline)
+        public SoftField(TextBoxBase box, bool multiline)
         {
             input = box;
             BackColor = UiColors.Field;
@@ -189,7 +190,7 @@ namespace SeccFirmwarePackager
         private readonly List<Row> rows = new List<Row>();
         private readonly DataGridView grid = new DataGridView();
         private readonly TextBox output = new TextBox();
-        private readonly TextBox details = new TextBox();
+        private readonly RichTextBox details = new RichTextBox();
         private readonly TextBox status = new TextBox();
         private readonly Button build = new RaisedButton();
         private readonly FtpAddressBox ftpAddress = new FtpAddressBox();
@@ -220,6 +221,7 @@ namespace SeccFirmwarePackager
         private bool ftpBusy;
         private bool ftpListing;
         private bool changing;
+        private bool loadingFolder;
         private string lastPreviewMessage;
         private bool pageInitialized;
         private bool showingUpgradePage;
@@ -228,7 +230,7 @@ namespace SeccFirmwarePackager
 
         public MainForm()
         {
-            Text = "打包工具 · V0.0.1"; Name = "MainForm";
+            Text = "打包工具 · V0.0.2"; Name = "MainForm";
             MinimumSize = new Size(1100, 720);
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
             Size = new Size(Math.Max(1100, Math.Min(1320, work.Width - 24)), Math.Max(720, Math.Min(792, work.Height - 24)));
@@ -345,7 +347,6 @@ namespace SeccFirmwarePackager
             ftpUpload.Name = "FtpUploadButton"; ftpUpload.Text = "上传到 FTP"; SetupMainButton(ftpUpload, true); ftpUpload.Click += FtpUploadClicked;
             ftpDirectory.Name = "FtpDirectoryButton"; ftpDirectory.Text = "打开 FTP 目录"; SetupMainButton(ftpDirectory, false); ftpDirectory.Click += FtpDirectoryClicked;
             ftp.Controls.Add(RightActions(ftpDirectory, ftpUpload), 0, 4); ftpCard.Controls.Add(ftp); right.Controls.Add(ftpCard, 0, 2);
-            ftpStatus.TextChanged += delegate { details.ForeColor = ftpStatus.ForeColor; details.Text = ftpStatus.Text; };
             FormClosing += FtpFormClosing;
             grid.Name = "PreviewGrid"; grid.Dock = DockStyle.Fill; grid.ReadOnly = true;
             grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.AllowUserToResizeRows = false;
@@ -362,8 +363,8 @@ namespace SeccFirmwarePackager
             SectionCard result = new SectionCard { Name = "OperationResultCard", Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0), Padding = new Padding(14, 8, 14, 10) };
             TableLayoutPanel resultBody = CardLayout(2); resultBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); resultBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             resultBody.Controls.Add(TitleLabel("操作结果"), 0, 0);
-            details.Name = "ResultDetails"; details.Multiline = true; details.ReadOnly = true; details.ScrollBars = ScrollBars.Both;
-            details.WordWrap = false; details.Text = "";
+            details.Name = "ResultDetails"; details.Multiline = true; details.ReadOnly = true; details.ScrollBars = RichTextBoxScrollBars.Both;
+            details.WordWrap = false; details.DetectUrls = false; details.MaxLength = Int32.MaxValue; details.ForeColor = UiColors.Ink;
             resultBody.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill, Padding = new Padding(9, 5, 9, 5) }, 0, 1); result.Controls.Add(resultBody);
             workspace.Controls.Add(result, 0, 2); workspace.SetColumnSpan(result, 2);
             RefreshPreview();
@@ -607,7 +608,11 @@ namespace SeccFirmwarePackager
 
         private void ShowGeneratedHeader()
         {
-            try { using (HeaderViewer viewer = new HeaderViewer(ReadGeneratedHeader())) viewer.ShowDialog(this); }
+            try
+            {
+                using (HeaderViewer viewer = new HeaderViewer(ReadGeneratedHeader())) viewer.ShowDialog(this);
+                ShowInputResult("已查看包头：" + Path.GetFileName(lastGeneratedPackage), false);
+            }
             catch (Exception ex)
             {
                 ShowInputResult("查看包头失败：" + ex.Message, true);
@@ -617,9 +622,26 @@ namespace SeccFirmwarePackager
 
         private void ShowInputResult(string message, bool error)
         {
-            details.ForeColor = error ? Color.FromArgb(181, 50, 57) : UiColors.Ink;
-            details.Text = message;
-            details.SelectionStart = 0;
+            AppendResult(message, error ? Color.FromArgb(181, 50, 57) : UiColors.Ink);
+        }
+
+        private void AppendResult(string message, Color color)
+        {
+            if (String.IsNullOrWhiteSpace(message)) return;
+            details.Select(details.TextLength, 0);
+            details.SelectionColor = color;
+            details.AppendText("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "] " +
+                message.TrimEnd('\r', '\n') + Environment.NewLine);
+            details.Select(details.TextLength, 0);
+            details.SelectionColor = UiColors.Ink;
+            details.ScrollToCaret();
+        }
+
+        private void ReportFtp(string message, Color color)
+        {
+            ftpStatus.ForeColor = color;
+            ftpStatus.Text = message;
+            AppendResult(message, color);
         }
 
         private void ChooseFolder()
@@ -659,24 +681,29 @@ namespace SeccFirmwarePackager
                 groups[type].Add(path);
             }
             int loaded = 0;
-            foreach (Row row in rows)
+            loadingFolder = true;
+            try
             {
-                List<string> candidates;
-                if (!groups.TryGetValue(row.Type, out candidates))
-                { messages.Add(row.Type + "：未找到匹配文件，保留原选择。"); continue; }
-                if (candidates.Count != 1)
-                { error = true; messages.Add(row.Type + "：发现 " + candidates.Count + " 个同类文件，未自动选择，保留原选择。"); continue; }
-                FirmwareType type; string name, version;
-                FirmwareFileName.TryParse(candidates[0], out type, out name, out version);
-                if (String.IsNullOrEmpty(version))
-                { error = true; messages.Add(row.Type + "：文件名缺少版本，未加载，保留原选择。"); continue; }
-                try { SetInputFile(row, candidates[0]); loaded++; messages.Add(row.Type + "：已加载 " + name); }
-                catch (Exception ex)
+                foreach (Row row in rows)
                 {
-                    if (!(ex is InvalidDataException || ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException)) throw;
-                    error = true; messages.Add(row.Type + "：未加载，保留原选择。" + ex.Message);
+                    List<string> candidates;
+                    if (!groups.TryGetValue(row.Type, out candidates))
+                    { messages.Add(row.Type + "：未找到匹配文件，保留原选择。"); continue; }
+                    if (candidates.Count != 1)
+                    { error = true; messages.Add(row.Type + "：发现 " + candidates.Count + " 个同类文件，未自动选择，保留原选择。"); continue; }
+                    FirmwareType type; string name, version;
+                    FirmwareFileName.TryParse(candidates[0], out type, out name, out version);
+                    if (String.IsNullOrEmpty(version))
+                    { error = true; messages.Add(row.Type + "：文件名缺少版本，未加载，保留原选择。"); continue; }
+                    try { SetInputFile(row, candidates[0]); loaded++; messages.Add(row.Type + "：已加载 " + name); }
+                    catch (Exception ex)
+                    {
+                        if (!(ex is InvalidDataException || ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException)) throw;
+                        error = true; messages.Add(row.Type + "：未加载，保留原选择。" + ex.Message);
+                    }
                 }
             }
+            finally { loadingFolder = false; }
             ShowInputResult("加载完成：更新 " + loaded + " 项；未匹配或无效项保持不变。" + Environment.NewLine + String.Join(Environment.NewLine, messages.ToArray()), error);
         }
 
@@ -733,6 +760,7 @@ namespace SeccFirmwarePackager
                 row.AutoName = row.NameBox.Text;
             }
             finally { changing = false; }
+            if (!loadingFolder) ShowInputResult("已添加 " + row.Type + " 固件：" + Path.GetFileName(path), false);
             RefreshPreview();
         }
 
@@ -779,6 +807,8 @@ namespace SeccFirmwarePackager
 
         private void ClearInput(Row row)
         {
+            bool hadSelection = !String.IsNullOrWhiteSpace(row.PathBox.Text) || !String.IsNullOrWhiteSpace(row.NameBox.Text) ||
+                !String.IsNullOrWhiteSpace(row.VersionBox.Text);
             changing = true;
             row.PathBox.Clear();
             row.NameBox.Clear();
@@ -786,6 +816,7 @@ namespace SeccFirmwarePackager
             row.AutoName = null;
             changing = false;
             RefreshPreview();
+            if (hadSelection) ShowInputResult("已清除 " + row.Type + " 固件选择。", false);
         }
 
         private void InputChanged(object sender, EventArgs e)
@@ -830,9 +861,8 @@ namespace SeccFirmwarePackager
             status.Text = problem == null ? "" : "未就绪：" + problem;
             status.ForeColor = problem == null ? UiColors.Muted : Color.FromArgb(181, 50, 57);
             if (plan != null && plan.Warnings.Count > 0) status.Text = String.Join("\r\n", plan.Warnings.ToArray());
-            // Validation remains visible without a permanent overview panel.
-            if (!String.IsNullOrEmpty(status.Text)) { details.ForeColor = status.ForeColor; details.Text = status.Text; }
-            else if (!String.IsNullOrEmpty(lastPreviewMessage) && details.Text == lastPreviewMessage) { details.Text = ""; details.ForeColor = UiColors.Ink; }
+            if (!loadingFolder && !String.IsNullOrEmpty(status.Text) && status.Text != lastPreviewMessage)
+                AppendResult(status.Text, status.ForeColor);
             lastPreviewMessage = status.Text;
             workspace.PerformLayout();
         }
@@ -874,8 +904,7 @@ namespace SeccFirmwarePackager
             catch (InvalidDataException ex)
             {
                 if (raw != null && raw.IndexOf('@') >= 0) ftpAddress.Clear();
-                ftpStatus.ForeColor = Color.FromArgb(181, 50, 57);
-                ftpStatus.Text = ex.Message;
+                ReportFtp(ex.Message, Color.FromArgb(181, 50, 57));
                 if (showErrors) MessageBox.Show(this, ex.Message, "FTP 地址无效", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return false;
             }
@@ -895,14 +924,13 @@ namespace SeccFirmwarePackager
                     "本地文件：\n" + ftpFile.Text + "\n\n" + (ftpPackageSource ? "联合包：上传前校验。" : "普通文件：直接上传，不进行联合包校验。") + "\n\n即将上传至：\n" + destination.AbsoluteUri +
                     "\n\n普通 FTP 明文传输账号、密码和文件；服务器同名文件可能被覆盖。确定上传？",
                     "确认 FTP 上传", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
-                if (answer != DialogResult.Yes) return;
+                if (answer != DialogResult.Yes) { ReportFtp("已取消 FTP 上传。", UiColors.Muted); return; }
                 StartFtpTransfer(ftpFile.Text, ftpAddress.Text, ftpUser.Text, ftpPassword.Text, ftpPackageSource);
             }
             catch (InvalidDataException ex)
             {
-                ftpStatus.ForeColor = Color.FromArgb(181, 50, 57);
                 sounds.Play("failure");
-                ftpStatus.Text = "上传失败：" + ex.Message;
+                ReportFtp("上传失败：" + ex.Message, Color.FromArgb(181, 50, 57));
                 MessageBox.Show(this, ex.Message, "上传失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -912,8 +940,7 @@ namespace SeccFirmwarePackager
             if (ftpBusy || !ApplyFtpAddress(ftpAddress.Text, true)) return;
             if (String.IsNullOrWhiteSpace(ftpUser.Text))
             {
-                ftpStatus.ForeColor = Color.FromArgb(181, 50, 57);
-                ftpStatus.Text = "打开 FTP 目录失败：请输入 FTP 用户名。";
+                ReportFtp("打开 FTP 目录失败：请输入 FTP 用户名。", Color.FromArgb(181, 50, 57));
                 MessageBox.Show(this, "请输入 FTP 用户名。", "打开 FTP 目录失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
@@ -921,8 +948,7 @@ namespace SeccFirmwarePackager
             string localName = String.IsNullOrEmpty(ftpFile.Text) ? null : Path.GetFileName(ftpFile.Text);
             ftpListing = true;
             SetFtpBusy(true);
-            ftpStatus.ForeColor = UiColors.Blue;
-            ftpStatus.Text = "正在读取 FTP 目录…";
+            ReportFtp("正在读取 FTP 目录…", UiColors.Blue);
             ThreadPool.QueueUserWorkItem(delegate
             {
                 FtpDirectoryResult result = null;
@@ -940,15 +966,13 @@ namespace SeccFirmwarePackager
                         SetFtpBusy(false);
                         if (result != null)
                         {
-                            ftpStatus.ForeColor = Color.FromArgb(29, 120, 88);
-                            ftpStatus.Text = "目录读取成功：共 " + result.Entries.Length + " 个条目。";
+                            ReportFtp("目录读取成功：共 " + result.Entries.Length + " 个条目。", Color.FromArgb(29, 120, 88));
                             using (FtpDirectoryViewer viewer = new FtpDirectoryViewer(result, localName)) viewer.ShowDialog(this);
                         }
                         else
                         {
-                            ftpStatus.ForeColor = Color.FromArgb(181, 50, 57);
                             sounds.Play("failure");
-                            ftpStatus.Text = "打开 FTP 目录失败：" + error;
+                            ReportFtp("打开 FTP 目录失败：" + error, Color.FromArgb(181, 50, 57));
                             MessageBox.Show(this, error, "打开 FTP 目录失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
                     }));
@@ -966,8 +990,7 @@ namespace SeccFirmwarePackager
         {
             ftpListing = false;
             SetFtpBusy(true);
-            ftpStatus.ForeColor = UiColors.Blue;
-            ftpStatus.Text = (package ? "正在校验联合包并上传：" : "正在上传本地文件：") + Path.GetFileName(path);
+            ReportFtp((package ? "正在校验联合包并上传：" : "正在上传本地文件：") + Path.GetFileName(path), UiColors.Blue);
             ThreadPool.QueueUserWorkItem(delegate
             {
                 FtpUploadResult result = null;
@@ -985,15 +1008,13 @@ namespace SeccFirmwarePackager
                         if (result != null)
                         {
                             sounds.Play("success");
-                            ftpStatus.ForeColor = Color.FromArgb(29, 120, 88);
-                            ftpStatus.Text = "上传成功：" + Path.GetFileName(path) + "，FTP 服务器已确认接收（" + result.StatusCode + "），共 " + result.Bytes.ToString("N0") + " 字节。";
+                            ReportFtp("上传成功：" + Path.GetFileName(path) + "，FTP 服务器已确认接收（" + result.StatusCode + "），共 " + result.Bytes.ToString("N0") + " 字节。", Color.FromArgb(29, 120, 88));
                             tooltips.SetToolTip(ftpStatus, result.RemoteUrl);
                         }
                         else
                         {
-                            ftpStatus.ForeColor = Color.FromArgb(181, 50, 57);
                             sounds.Play("failure");
-                            ftpStatus.Text = "上传失败：" + Path.GetFileName(path) + "，" + error + " 服务器上可能留有不完整文件。";
+                            ReportFtp("上传失败：" + Path.GetFileName(path) + "，" + error + " 服务器上可能留有不完整文件。", Color.FromArgb(181, 50, 57));
                             tooltips.SetToolTip(ftpStatus, ftpStatus.Text);
                         }
                     }));
@@ -1041,7 +1062,7 @@ namespace SeccFirmwarePackager
                 {
                     DialogResult answer = MessageBox.Show(this, "输出文件已存在。确认用新联合包替换？\n" + output.Text,
                         "确认替换", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                    if (answer != DialogResult.Yes) return;
+                    if (answer != DialogResult.Yes) { ShowInputResult("已取消替换联合包。", false); return; }
                 }
                 PackageReport report = Packager.Build(Inputs(), output.Text);
                 string generatedPath = Path.GetFullPath(output.Text);
@@ -1056,9 +1077,9 @@ namespace SeccFirmwarePackager
             catch (Exception ex)
             {
                 sounds.Play("failure");
-                details.ForeColor = Color.FromArgb(181, 50, 57);
-                details.Text = "打包失败：" + ex.Message;
-                MessageBox.Show(this, details.Text, "打包失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                string message = "打包失败：" + ex.Message;
+                ShowInputResult(message, true);
+                MessageBox.Show(this, message, "打包失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1074,10 +1095,7 @@ namespace SeccFirmwarePackager
             }
             foreach (string warning in report.Warnings) text.AppendLine("\r\n警告：" + warning);
             sounds.Play("success");
-            details.ForeColor = UiColors.Ink;
-            details.Text = text.ToString();
-            details.SelectionStart = 0;
-            details.ScrollToCaret();
+            AppendResult(text.ToString(), UiColors.Ink);
         }
     }
 

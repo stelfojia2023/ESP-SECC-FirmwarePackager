@@ -69,15 +69,15 @@ internal static class GuiSmokeTests
         }
     }
 
-    private static void WaitForStatus(Control status, string expected)
+    private static void WaitForStatus(Control status, string expected, int start)
     {
         DateTime deadline = DateTime.UtcNow.AddSeconds(20);
-        while (!status.Text.Contains(expected) && DateTime.UtcNow < deadline)
+        while (status.Text.IndexOf(expected, start, StringComparison.Ordinal) < 0 && DateTime.UtcNow < deadline)
         {
             Application.DoEvents();
             Thread.Sleep(10);
         }
-        if (!status.Text.Contains(expected)) throw new Exception("FTP UI did not report " + expected + ": " + status.Text);
+        if (status.Text.IndexOf(expected, start, StringComparison.Ordinal) < 0) throw new Exception("FTP UI did not report " + expected);
     }
 
     private static void TestFtpUi(MainForm form, string package)
@@ -85,7 +85,7 @@ internal static class GuiSmokeTests
         FtpAddressBox address = Find<FtpAddressBox>(form, "FtpAddress");
         TextBox user = Find<TextBox>(form, "FtpUser");
         TextBox password = Find<TextBox>(form, "FtpPassword");
-        TextBox status = Find<TextBox>(form, "ResultDetails");
+        RichTextBox status = Find<RichTextBox>(form, "ResultDetails");
         if (!password.UseSystemPasswordChar) throw new Exception("FTP password is not masked");
         MethodInfo start = typeof(MainForm).GetMethod("StartFtpUpload", BindingFlags.Instance | BindingFlags.NonPublic);
         if (start == null) throw new Exception("Missing FTP upload action");
@@ -113,18 +113,20 @@ internal static class GuiSmokeTests
             });
             confirm.IsBackground = true;
             confirm.Start();
+            int beforeUpload = status.TextLength;
             Find<Button>(form, "FtpUploadButton").PerformClick();
             if (!accepted) throw new Exception("FTP confirmation did not appear");
-            WaitForStatus(status, "上传成功");
+            WaitForStatus(status, "上传成功", beforeUpload);
             if (server.Uploaded == null || Convert.ToBase64String(server.Uploaded) != Convert.ToBase64String(File.ReadAllBytes(package)))
                 throw new Exception("FTP UI upload bytes mismatch");
         }
         using (FtpTests.Server server = new FtpTests.Server("test-user", "fake.with.dot", 451))
         {
             address.PasteAddress("ftp://test-user:fake.with.dot@127.0.0.1:" + server.Port + "/upgrade");
+            int beforeFailure = status.TextLength;
             start.Invoke(form, new object[] { package, address.Text, user.Text, password.Text });
-            WaitForStatus(status, "上传失败");
-            if (!status.Text.Contains("451") || status.Text.Contains("fake.with.dot"))
+            WaitForStatus(status, "上传失败", beforeFailure);
+            if (status.Text.IndexOf("451", beforeFailure, StringComparison.Ordinal) < 0 || status.Text.Contains("fake.with.dot"))
                 throw new Exception("FTP UI failure was not reported safely");
         }
         address.PasteAddress("ftp://localhost:2121/elsewhere");
@@ -136,7 +138,7 @@ internal static class GuiSmokeTests
     private static void TestFtpDirectoryUi(MainForm form, string package, bool found)
     {
         FtpAddressBox address = Find<FtpAddressBox>(form, "FtpAddress");
-        TextBox status = Find<TextBox>(form, "ResultDetails");
+        RichTextBox status = Find<RichTextBox>(form, "ResultDetails");
         Button button = Find<Button>(form, "FtpDirectoryButton");
         using (FtpTests.Server server = new FtpTests.Server("test-user", "fake.with.dot", 226))
         {
@@ -178,10 +180,11 @@ internal static class GuiSmokeTests
                 finally { inspect.Stop(); viewer.Close(); }
             };
             inspect.Start();
+            int beforeListing = status.TextLength;
             button.PerformClick();
             if (button.Enabled || Find<Button>(form, "FtpUploadButton").Enabled)
                 throw new Exception("FTP buttons must be disabled while directory is loading");
-            WaitForStatus(status, "目录读取成功");
+            WaitForStatus(status, "目录读取成功", beforeListing);
             DateTime deadline = DateTime.UtcNow.AddSeconds(20);
             while (!observed && viewError == null && DateTime.UtcNow < deadline) { Application.DoEvents(); Thread.Sleep(10); }
             inspect.Dispose();
@@ -237,7 +240,7 @@ internal static class GuiSmokeTests
                     {
                         string input = Path.Combine(workDir, "M4 固件 文件.bin");
                         string output = Path.Combine(workDir, "联合 固件 包.bin");
-                        if (!form.Text.Contains("V0.0.1")) throw new Exception("Tool version must be independent from package format V1");
+                        if (!form.Text.Contains("V0.0.2")) throw new Exception("Tool version must be independent from package format V1");
                         if (form.Controls.Find("FtpToggle", true).Length != 0 || form.Controls.Find("FtpDialog", true).Length != 0)
                             throw new Exception("FTP must be inline without toggle or dialog");
                         if (form.Controls.Find("BrandHeader", true).Length != 0) throw new Exception("Redundant brand banner must not be present");
@@ -298,7 +301,7 @@ internal static class GuiSmokeTests
                             throw new Exception("Preview did not display the selected firmware and offset");
                         Find<Button>(form, "BuildButton").PerformClick();
                         if (!File.Exists(output)) throw new Exception("Generate button did not create the package");
-                        string resultText = Find<TextBox>(form, "ResultDetails").Text;
+                        string resultText = Find<RichTextBox>(form, "ResultDetails").Text;
                         if (!resultText.Contains("打包并校验成功") || !resultText.Contains("V000B01D15") || !resultText.Contains("联合包大小"))
                             throw new Exception("Generated package details not displayed");
                         if (Packager.VerifyFile(output).Entries.Count != 1) throw new Exception("GUI package invalid");
@@ -311,7 +314,7 @@ internal static class GuiSmokeTests
                         Find<TextBox>(form, "Path_PFC").Text = overBudget;
                         Find<TextBox>(form, "Name_PFC").Text = "PFC 超限";
                         Find<TextBox>(form, "Version_PFC").Text = "V000B01D15";
-                        if (!Find<TextBox>(form, "ResultDetails").Text.Contains("上限"))
+                        if (!Find<RichTextBox>(form, "ResultDetails").Text.Contains("上限"))
                             throw new Exception("Oversized file rejection must be visible before generation");
                         form.Refresh();
                         Application.DoEvents();
@@ -341,8 +344,9 @@ internal static class GuiSmokeTests
                         if (Find<TextBox>(form, "UpgradePackagePath").Text != allOutput ||
                             !Find<TextBox>(form, "UpgradePackageInfo").Text.Contains("ESP32"))
                             throw new Exception("The latest generated package did not replace the upgrade file selection");
-                        TextBox fiveReport = Find<TextBox>(form, "ResultDetails");
-                        if (fiveReport.Text.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Length > 10)
+                        RichTextBox fiveReport = Find<RichTextBox>(form, "ResultDetails");
+                        int lastReport = fiveReport.Text.LastIndexOf("打包并校验成功", StringComparison.Ordinal);
+                        if (lastReport < 0 || fiveReport.Text.Substring(lastReport).Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Length > 10)
                             throw new Exception("Five-firmware success report must fit ten lines");
                         TestFtpUi(form, allOutput);
                         TestFtpDirectoryUi(form, allOutput, true);

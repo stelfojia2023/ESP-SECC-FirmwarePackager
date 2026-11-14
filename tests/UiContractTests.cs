@@ -96,7 +96,7 @@ internal static class UiContractTests
         Assert(Find(form, "PackageCard").Contains(header) && !Find(form, "OperationResultCard").Contains(header),
             "header action is inside the package card");
         Assert(Find(form, "OpenVerifyButton") == null, "standalone package verification button is removed");
-        TextBox result = (TextBox)Find(form, "ResultDetails");
+        RichTextBox result = (RichTextBox)Find(form, "ResultDetails");
         Assert(result.ClientSize.Height >= result.Font.Height * 10, "compact results still show ten lines: actual=" + result.ClientSize.Height + ", required=" + result.Font.Height * 10);
     }
     private static void TestUiRefinement(Form form)
@@ -364,6 +364,55 @@ internal static class UiContractTests
         ((Button)Find(form, "PackPageTab")).PerformClick(); Application.DoEvents();
     }
 
+    private static void TestResultHistory(Assembly app)
+    {
+        Type formType = app.GetType("SeccFirmwarePackager.MainForm");
+        using (Form form = (Form)Activator.CreateInstance(formType, true))
+        {
+            form.Show(); Application.DoEvents();
+            RichTextBox log = (RichTextBox)Find(form, "ResultDetails");
+            Assert(log.ReadOnly && log.MaxLength == Int32.MaxValue && log.TextLength == 0, "history starts empty and has no small text limit");
+            MethodInfo append = formType.GetMethod("AppendResult", BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo ftp = formType.GetMethod("ReportFtp", BindingFlags.Instance | BindingFlags.NonPublic);
+            DateTime before = DateTime.Now.AddSeconds(-1);
+            Color normal = Color.FromArgb(48, 51, 48), red = Color.FromArgb(181, 50, 57);
+            append.Invoke(form, new object[] { "正常结果", normal });
+            ftp.Invoke(form, new object[] { "相同失败", red });
+            ftp.Invoke(form, new object[] { "相同失败", red });
+            string initial = log.Text;
+            Assert(System.Text.RegularExpressions.Regex.Matches(initial,
+                @"(?m)^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] ").Count == 3, "every result has a timestamp");
+            DateTime stamp;
+            Assert(DateTime.TryParseExact(initial.Substring(1, 19), "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out stamp) && stamp >= before.AddSeconds(-1) && stamp <= DateTime.Now.AddSeconds(1),
+                "timestamps use the local current time");
+            int first = initial.IndexOf("正常结果", StringComparison.Ordinal);
+            int error = initial.IndexOf("相同失败", StringComparison.Ordinal);
+            Assert(first >= 0 && error > first && initial.IndexOf("相同失败", error + 1, StringComparison.Ordinal) > error,
+                "repeated identical results are retained in order");
+            log.Select(first, "正常结果".Length); Assert(log.SelectionColor.ToArgb() == normal.ToArgb(), "normal history retains its color");
+            log.Select(error, "相同失败".Length); Assert(log.SelectionColor.ToArgb() == red.ToArgb(), "error history remains red");
+            log.Select(log.TextLength, 0);
+            ((Button)Find(form, "UpgradePageTab")).PerformClick(); Application.DoEvents();
+            ((Button)Find(form, "PackPageTab")).PerformClick(); Application.DoEvents();
+            Assert(log.Text == initial, "switching pages does not clear history");
+            ((Button)Find(form, "ClearAllButton")).PerformClick(); Application.DoEvents();
+            Assert(log.Text.StartsWith(initial, StringComparison.Ordinal) && log.Text.Contains("已清空五类固件选择"),
+                "clearing inputs appends a result instead of clearing history");
+            for (int i = 0; i < 500; i++)
+                append.Invoke(form, new object[] { "history-" + i + "-" + new string('x', 70), normal });
+            Assert(log.TextLength > 32767 && log.Text.Contains("正常结果") && log.Text.Contains("history-499-"),
+                "history retains old and new entries beyond 32 KiB");
+            form.Close();
+        }
+        using (Form reopened = (Form)Activator.CreateInstance(formType, true))
+        {
+            reopened.Show(); Application.DoEvents();
+            Assert(((RichTextBox)Find(reopened, "ResultDetails")).TextLength == 0, "closing and reopening starts a fresh session");
+            reopened.Close();
+        }
+    }
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -371,6 +420,9 @@ internal static class UiContractTests
         {
             Application.EnableVisualStyles();
             Assembly app = Assembly.LoadFrom(Path.GetFullPath(args[0]));
+            Assert(app.GetName().Version.ToString() == "0.0.2.0" &&
+                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.2.0",
+                "assembly and file version match release");
             foreach (string sound in new[] { "click", "success", "failure" })
                 using (Stream stream = app.GetManifestResourceStream("Sounds." + sound + ".wav"))
                     Assert(stream != null && stream.Length > 44, "embedded sound " + sound);
@@ -381,7 +433,7 @@ internal static class UiContractTests
                 Assert(Digest(Find(form, "FtpUser").Text) == "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "requested default FTP user");
                 Assert(Digest(Find(form, "FtpPassword").Text) == "eb2f983bf53fe54df17ad96abf5ebd0bc414f9493647e244fc4c92f86ac11499" &&
                     ((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "requested default FTP password is masked");
-                Assert(form.Text.Contains("V0.0.1"), "tool version separated from format");
+                Assert(form.Text.Contains("V0.0.2"), "tool version separated from format");
                 Assert(Find(form, "HelpButton") != null && Find(form, "HelpButton").Visible, "in-content help entry exists");
                 Control helpButton = Find(form, "HelpButton");
                 Assert(helpButton.Parent.ClientRectangle.Contains(helpButton.Bounds), "help button within parent client bounds");
@@ -408,9 +460,15 @@ internal static class UiContractTests
                 TableLayoutPanel body = (TableLayoutPanel)resultCard.Parent;
                 Assert(body.GetColumnSpan(resultCard) == 2, "operation result spans both columns");
                 Label status = (Label)form.GetType().GetField("ftpStatus", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
-                status.ForeColor = Color.FromArgb(181, 50, 57); status.Text = "上传失败：synthetic-test";
-                Assert(Find(form, "ResultDetails").Text == status.Text && Find(form, "ResultDetails").ForeColor == status.ForeColor,
-                    "FTP errors synchronize to red bottom result");
+                Color red = Color.FromArgb(181, 50, 57);
+                form.GetType().GetMethod("ReportFtp", BindingFlags.Instance | BindingFlags.NonPublic)
+                    .Invoke(form, new object[] { "上传失败：synthetic-test", red });
+                RichTextBox resultHistory = (RichTextBox)Find(form, "ResultDetails");
+                int failure = resultHistory.Text.LastIndexOf(status.Text, StringComparison.Ordinal);
+                Assert(failure >= 0, "FTP error is appended to bottom result");
+                resultHistory.Select(failure, status.Text.Length);
+                Assert(resultHistory.SelectionColor.ToArgb() == red.ToArgb(), "FTP error retains red text");
+                resultHistory.Select(resultHistory.TextLength, 0);
                 DataGridView grid = (DataGridView)Find(form, "PreviewGrid");
                 Assert(grid.Rows.Count == 0 && !grid.ColumnHeadersVisible, "empty preview has no rows or column headers");
                 Assert(Find(form, "PreviewToggle") == null && Find(form, "FtpUsePackage") == null, "removed detail toggle and package shortcut");
@@ -423,7 +481,7 @@ internal static class UiContractTests
                     Assert(Find(form, "Name_" + type).Text == "", "name placeholder not actual input " + type);
                     Assert(Find(form, "Version_" + type).Text == "", "version placeholder not actual input " + type);
                 }
-                TextBox resultBox = (TextBox)Find(form, "ResultDetails");
+                RichTextBox resultBox = (RichTextBox)Find(form, "ResultDetails");
                 Assert(resultBox.ClientSize.Height >= resultBox.Font.Height * 10, "results show at least ten text lines");
                 {
                     Assert(((TextBox)Find(form, "FtpFilePath")).Text == "", "empty source before generation");
@@ -468,7 +526,10 @@ internal static class UiContractTests
                 Assert(Convert.ToBase64String((byte[])readGenerated.Invoke(form, null)) == Convert.ToBase64String(snapshot), "header viewer does not claim payload integrity verification");
                 File.WriteAllBytes(package, generatedBytes);
                 TestUpgradePage(form, work, package);
-                string result = Find(form, "ResultDetails").Text;
+                string allResults = Find(form, "ResultDetails").Text;
+                int resultStart = allResults.LastIndexOf("打包并校验成功", StringComparison.Ordinal);
+                int resultEnd = resultStart < 0 ? -1 : allResults.IndexOf("\n[", resultStart, StringComparison.Ordinal);
+                string result = resultStart < 0 ? "" : (resultEnd < 0 ? allResults.Substring(resultStart) : allResults.Substring(resultStart, resultEnd - resultStart));
                 Assert(result.Contains("打包并校验成功") && result.Contains(package) && result.Contains("联合包大小"), "useful result retained");
                 Assert(!result.Contains("包格式") && !result.Contains("包头") && !result.Contains("MD5") && !result.Contains("0x"), "format internals removed from success report");
 
@@ -535,7 +596,9 @@ internal static class UiContractTests
                     "five-file upgrade action remains reachable by scrolling");
                 ((Button)Find(form, "PackPageTab")).PerformClick(); Application.DoEvents();
                 Assert(grid.Visible && grid.Rows.Count == 5 && grid.DisplayedRowCount(false) >= 5, "all five rows fully displayed");
-                Assert(resultBox.Text.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Length <= 10, "five-file report within ten lines");
+                int latestReport = resultBox.Text.LastIndexOf("打包并校验成功", StringComparison.Ordinal);
+                Assert(latestReport >= 0 && resultBox.Text.Substring(latestReport).Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).Length <= 10,
+                    "latest five-file report within ten lines");
                 using (Bitmap image = new Bitmap(form.Width, form.Height))
                 { form.DrawToBitmap(image, new Rectangle(Point.Empty, form.Size)); image.Save(Path.Combine(work, "five-files-render.png")); }
                 Control fullContent = resultCard.Parent;
@@ -558,6 +621,7 @@ internal static class UiContractTests
                 TestFilenameWorkflow(form, work);
                 form.Close();
             }
+            TestResultHistory(app);
             Console.WriteLine("PASS UI contract assertions=" + assertions + " (not native interactive GUI validation)"); return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }

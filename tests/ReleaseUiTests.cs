@@ -216,6 +216,13 @@ internal static class ReleaseUiTests
         return false;
     }
 
+    private static Node ResultHistory(IntPtr root)
+    {
+        foreach (Node child in Children(root))
+            if (IsClass(child, "RICHEDIT")) return child;
+        throw new Exception("Operation history control not found.");
+    }
+
     private static void RealDrag(IntPtr target, string path)
     {
         Rect destination;
@@ -325,6 +332,8 @@ internal static class ReleaseUiTests
             process = Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe), UseShellExecute = true });
             WaitUntil(delegate { process.Refresh(); return process.MainWindowHandle != IntPtr.Zero; }, "Release GUI window did not appear.");
             Thread.Sleep(1000);
+            process.Refresh();
+            if (!process.MainWindowTitle.Contains("V0.0.2")) throw new Exception("Release window version is incorrect.");
             IntPtr root = process.MainWindowHandle;
             uint id = (uint)process.Id;
             Node inlineUpload = Button(root, "上传到 FTP", 0);
@@ -396,6 +405,17 @@ internal static class ReleaseUiTests
             }
             Click(Button(root, "固件打包", 0).Handle);
             WaitUntil(delegate { return IsWindowVisible(Button(root, "包生成", 0).Handle); }, "Packaging page did not return.");
+            Node history = ResultHistory(root);
+            string beforeClear = Describe(history.Handle).Text;
+            if (!beforeClear.Contains("已添加 M4") || !beforeClear.Contains("打包失败") ||
+                !beforeClear.Contains("打包并校验成功") || !beforeClear.Contains("已查看包头") ||
+                System.Text.RegularExpressions.Regex.Matches(beforeClear, @"(?m)^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] ").Count < 4)
+                throw new Exception("Operation results or timestamps were not retained.");
+            Click(Button(root, "一键清理", 0).Handle);
+            WaitUntil(delegate { return Describe(history.Handle).Text.Contains("已清空五类固件选择"); }, "Clear result did not appear.");
+            string afterClear = Describe(history.Handle).Text;
+            if (!afterClear.Contains("打包失败") || !afterClear.Contains("打包并校验成功") || !afterClear.Contains("已查看包头"))
+                throw new Exception("Clearing inputs removed operation history.");
             byte[] corrupt = File.ReadAllBytes(output);
             corrupt[4096] ^= 1;
             string corruptPath = Path.Combine(work, "损坏 联合 包.bin");
@@ -407,7 +427,14 @@ internal static class ReleaseUiTests
             process.CloseMainWindow();
             if (!process.WaitForExit(10000)) throw new Exception("Release window did not close.");
             if (process.ExitCode != 0) throw new Exception("Release returned nonzero exit code.");
-            Console.WriteLine("PASS delivered EXE: help, native file drag, browse, generate, header dialog, upgrade page handoff, mode switch and manual file selection; core rejects corruption" + (args.Length == 3 ? " and validates prior sample" : ""));
+            process.Dispose();
+            process = Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe), UseShellExecute = true });
+            WaitUntil(delegate { process.Refresh(); return process.MainWindowHandle != IntPtr.Zero; }, "Reopened release window did not appear.");
+            WaitUntil(delegate { try { return ResultHistory(process.MainWindowHandle).Handle != IntPtr.Zero; } catch (Exception) { return false; } }, "Reopened history control did not appear.");
+            if (ResultHistory(process.MainWindowHandle).Text != "") throw new Exception("Operation history persisted after the application closed.");
+            process.CloseMainWindow();
+            if (!process.WaitForExit(10000) || process.ExitCode != 0) throw new Exception("Reopened release did not close cleanly.");
+            Console.WriteLine("PASS delivered EXE: help, native drag, generate, header, upgrade page, timestamped history retained until restart; core rejects corruption" + (args.Length == 3 ? " and validates prior sample" : ""));
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL release UI " + ex); return 1; }
