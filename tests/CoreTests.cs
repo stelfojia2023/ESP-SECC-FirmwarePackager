@@ -154,12 +154,20 @@ internal static class CoreTests
         b = Copy(valid); b[10] = 0; b[11] = 0; Fails(delegate { Packager.VerifyBytes(b); }, "包头长度");
         b = Copy(valid); b[12] ^= 1; Fails(delegate { Packager.VerifyBytes(b); }, "总长度");
         b = Copy(valid); b[16] = 0; Fails(delegate { Packager.VerifyBytes(b); }, "数量");
-        b = Copy(valid); b[40] = 1; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "预留区");
-        b = Copy(valid); b[128 + 256] = 1; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "类型");
-        b = Copy(valid); Put32(b, 128 + 4, 0); Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "偏移");
-        b = Copy(valid); Put32(b, 128 + 8, 0x7FFFFFFF); Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "越界");
-        b = Copy(valid); b[128 + 28] = 97; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "长度");
-        b = Copy(valid); b[128 + 32] = 0xFF; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "UTF-8");
+        b = Copy(valid); b[16] = 6; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "数量");
+        b = Copy(valid); b[0x28 + 5 * 256] = 1; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "包头区域");
+        b = Copy(valid); b[0x28 + 0x6E] = 1; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "预留区");
+        b = Copy(valid); b[0x28 + 256] = 1; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "类型");
+        b = Copy(valid); Put32(b, 0x28 + 4, 0); Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "偏移");
+        b = Copy(valid); Put32(b, 0x28 + 8, 0x7FFFFFFF); Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "越界");
+        b = Copy(valid); b[0x28 + 2] = 0; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "长度");
+        b = Copy(valid); b[0x28 + 2] = 40; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "长度");
+        b = Copy(valid); b[0x28 + 0x1C] = 0; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "长度");
+        b = Copy(valid); b[0x28 + 0x1C] = 40; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "长度");
+        b = Copy(valid); b[0x28 + 0x1E] = 0xFF; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "UTF-8");
+        b = Copy(valid); b[0x28 + 0x1E + b[0x28 + 2]] = 1; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "未使用区域");
+        b = Copy(valid); b[0x28 + 0x46 + b[0x28 + 0x1C]] = 1; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "未使用区域");
+        b = Copy(valid); Put32(b, 0x14, 0x80); Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "目录");
         b = Copy(valid); b[4096] ^= 1; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "固件 MD5");
         b = Copy(valid); b[4097] = 0; Rehash(b); Fails(delegate { Packager.VerifyBytes(b); }, "填充");
         b = Copy(valid); b[24] ^= 1; Fails(delegate { Packager.VerifyBytes(b); }, "整包 MD5");
@@ -180,36 +188,60 @@ internal static class CoreTests
         string emptyPath = Path.Combine(root, "空 文件.bin"); File.WriteAllBytes(emptyPath, new byte[0]);
         FirmwareInput empty = Input(0); empty.Path = emptyPath;
         Fails(delegate { Packager.Plan(new[] { empty }); }, "文件为空");
-        FirmwareInput longName = Input(0); longName.Name = new string('固', 33);
-        Fails(delegate { Packager.Plan(new[] { longName }); }, "最多允许 96");
-        FirmwareInput validName = Input(0); validName.Name = new string('固', 32);
-        Assert(Packager.Plan(new[] { validName }).Entries.Count == 1, "exact 96 UTF-8 bytes accepted");
-        FirmwareInput longVersion = Input(0); longVersion.Version = new string('v', 65);
-        Fails(delegate { Packager.Plan(new[] { longVersion }); }, "最多允许 64");
-        FirmwareInput goodVersion = Input(0); goodVersion.Version = new string('v', 64);
-        Assert(Packager.Plan(new[] { goodVersion }).Entries.Count == 1, "exact 64 bytes version accepted");
+        FirmwareInput longName = Input(0); longName.Name = new string('固', 14);
+        Fails(delegate { Packager.Plan(new[] { longName }); }, "最多允许 39");
+        FirmwareInput validName = Input(0); validName.Name = new string('固', 13);
+        Assert(Packager.Plan(new[] { validName }).Entries.Count == 1, "exact 39 UTF-8 bytes accepted");
+        FirmwareInput emojiName = Input(0); emojiName.Name = new string('固', 12) + "😀";
+        Fails(delegate { Packager.Plan(new[] { emojiName }); }, "最多允许 39");
+        FirmwareInput longVersion = Input(0); longVersion.Version = new string('v', 40);
+        Fails(delegate { Packager.Plan(new[] { longVersion }); }, "最多允许 39");
+        FirmwareInput goodVersion = Input(0); goodVersion.Version = new string('v', 39);
+        Assert(Packager.Plan(new[] { goodVersion }).Entries.Count == 1, "exact 39 bytes version accepted");
+        FirmwareInput invalidUnicode = Input(0); invalidUnicode.Name = "\uD800";
+        Fails(delegate { Packager.Plan(new[] { invalidUnicode }); }, "有效的 Unicode");
         FirmwareInput duplicate = Input(0);
         Fails(delegate { Packager.Plan(new[] { duplicate, Input(0) }); }, "重复");
-        int[] hardLimits = { 250 * 1024, 250 * 1024, 512 * 1024, 2 * 1024 * 1024, 5 * 1024 * 1024 / 2 };
-        for (int i = 0; i < hardLimits.Length; i++)
+        int[] budgets = { 250 * 1024, 250 * 1024, 512 * 1024, 2 * 1024 * 1024, 5 * 1024 * 1024 / 2 };
+        for (int i = 0; i < budgets.Length; i++)
         {
             string boundary = Path.Combine(root, Types[i] + "-boundary.bin");
             FirmwareInput item = Input(i); item.Path = boundary;
             File.WriteAllBytes(boundary, new byte[0]);
             Fails(delegate { Packager.Plan(new[] { item }); }, "文件为空");
-            File.WriteAllBytes(boundary, new byte[hardLimits[i]]);
-            Assert(Packager.Plan(new[] { item }).Entries[0].Size == hardLimits[i], Types[i] + " exact hard limit accepted");
+            File.WriteAllBytes(boundary, new byte[budgets[i]]);
+            PackageReport exact = Packager.Plan(new[] { item });
+            Assert(exact.Entries[0].Size == budgets[i] && exact.Warnings.Count == 0, Types[i] + " exact threshold accepted without warning");
             string generated = Path.Combine(root, "limit-" + Types[i] + ".bin");
             Packager.Build(new[] { item }, generated);
-            Assert(Packager.VerifyFile(generated).Entries[0].Size == hardLimits[i], Types[i] + " boundary build and verify");
-            File.WriteAllBytes(boundary, new byte[hardLimits[i] + 1]);
-            Fails(delegate { Packager.Plan(new[] { item }); }, "上限");
-            string rejected = Path.Combine(root, "rejected-" + Types[i] + ".bin");
-            Fails(delegate { Packager.Build(new[] { item }, rejected); }, "上限");
-            Assert(!File.Exists(rejected), Types[i] + " oversized build leaves no output");
+            Assert(Packager.VerifyFile(generated).Entries[0].Size == budgets[i], Types[i] + " boundary build and verify");
+            File.WriteAllBytes(boundary, new byte[budgets[i] + 1]);
+            if (i < 4)
+            {
+                PackageReport warning = Packager.Plan(new[] { item });
+                Assert(warning.Warnings.Count == 1 && warning.Warnings[0].Contains("预算"), Types[i] + " over budget warns");
+                string accepted = Path.Combine(root, "over-budget-" + Types[i] + ".bin");
+                Assert(Packager.Build(new[] { item }, accepted).Warnings.Count == 1 &&
+                       Packager.VerifyFile(accepted).Warnings.Count == 1, Types[i] + " over budget builds and validates");
+            }
+            else
+            {
+                Fails(delegate { Packager.Plan(new[] { item }); }, "上限");
+                string rejected = Path.Combine(root, "rejected-" + Types[i] + ".bin");
+                Fails(delegate { Packager.Build(new[] { item }, rejected); }, "上限");
+                Assert(!File.Exists(rejected), Types[i] + " oversized build leaves no output");
+            }
         }
+        string packageLimit = Path.Combine(root, "PFC-package-limit.bin");
+        FirmwareInput maxPackage = Input(0); maxPackage.Path = packageLimit;
+        File.WriteAllBytes(packageLimit, new byte[Packager.MaxPackageSize - Packager.HeaderSize]);
+        string maxOutput = Path.Combine(root, "exact-6MiB.bin");
+        Assert(Packager.Build(new[] { maxPackage }, maxOutput).TotalSize == Packager.MaxPackageSize,
+               "package exactly 6 MiB accepted");
+        File.WriteAllBytes(packageLimit, new byte[Packager.MaxPackageSize - Packager.HeaderSize + 1]);
+        Fails(delegate { Packager.Plan(new[] { maxPackage }); }, "6 MiB");
         Fails(delegate { Packager.VerifyBytes(new byte[Packager.MaxPackageSize + 1]); }, "6 MiB");
-        Console.WriteLine("PASS all five file hard limits: zero rejected, boundary accepted, boundary+1 rejected");
+        Console.WriteLine("PASS four soft budgets, ESP32 hard limit and exact 6 MiB package boundary");
         Fails(delegate { Packager.Build(Inputs(1), Path.Combine(root, "missing", "no.bin")); }, "输出目录不存在");
         Fails(delegate { Packager.Build(Inputs(1), root); }, "目录");
         byte[] before = File.ReadAllBytes(SourcePath(0));
@@ -228,7 +260,7 @@ internal static class CoreTests
         Packager.Build(Inputs(1), existing);
         Assert(Packager.VerifyFile(existing).Entries.Count == 1, "valid build replaces existing output");
         Fails(delegate { Packager.VerifyFile(Path.Combine(root, "不存在.bin")); }, "不可读取");
-        Console.WriteLine("PASS invalid input, limits, hard file limits, safe output and UTF-8 limits");
+        Console.WriteLine("PASS invalid input, budget and size limits, safe output and UTF-8 limits");
     }
 
     public static int Main(string[] args)

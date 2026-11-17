@@ -1,11 +1,11 @@
 {
-  "format": "SECCPKG1 V1 draft",
+  "format": "SECCPKG1 V1 (directory 0x28)",
   "bundle_file": "bundle-m4-esp32-v1.bin",
   "total_bytes": 20480,
   "total_hex": "0x5000",
-  "whole_md5_field_zeroed": "ef5cd8f46bc048a8a202867259a0ae29",
-  "ordinary_final_file_md5": "a93fb91832c2b79ac2ad9cfddb0e402c",
-  "bundle_sha256": "c1899b4b0b4cdb4cd9297c2b8262922a46ba911918c0692c8e0696c2b9796200",
+  "whole_md5_field_zeroed": "869b01d9d31d853143b29776e742fa39",
+  "ordinary_final_file_md5": "40d90ccd1e05eb6830cb80997f1dc137",
+  "bundle_sha256": "01e5b7033969b859619ef0c4a1da72bf2878abaf1da6534dc9f25aec0636ca4e",
   "entries": [
     {
       "kind": 3,

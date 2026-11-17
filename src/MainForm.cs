@@ -421,7 +421,7 @@ namespace SeccFirmwarePackager
         {
             UiColors.Apply(AppearanceSettings.Load());
             upgradePage = new UpgradePage();
-            Text = "打包工具 · V0.0.5"; Name = "MainForm";
+            Text = "打包工具 · V0.0.6"; Name = "MainForm";
             MinimumSize = new Size(1100, 720);
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
             Size = new Size(Math.Max(1100, Math.Min(1320, work.Width - 24)), Math.Max(720, Math.Min(792, work.Height - 24)));
@@ -848,7 +848,7 @@ namespace SeccFirmwarePackager
                 help.Text = "操作说明"; help.StartPosition = FormStartPosition.CenterParent;
                 help.Size = new Size(650, 520); help.MinimumSize = new Size(480, 360); help.BackColor = UiColors.Canvas;
                 TextBox text = new TextBox { Name = "HelpText", Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackColor = UiColors.Canvas, Font = Font };
-                text.Text = "文件与版本\r\n名称为文件名去掉 .bin；版本取下划线后的 V/v 至下一个下划线或点，保留大小写。名称/版本可修改，最多 96/64 个 UTF-8 字节。手动选入缺版本文件后须补填才能生成。\r\n\r\n一键加载\r\n仅扫描当前文件夹；按开头 PFC、LLC、M4、PLC、ESP32 识别 .bin，大小写不敏感。同类唯一且有效才更新；多文件、缺版本或无效项保留原选择并提示。一键清理不删除磁盘文件，不清 FTP 配置和输出位置。\r\n\r\n大小限制\r\n文件不可为空。PFC/LLC：256,000 字节（250 KiB）；M4：524,288 字节（512 KiB）；PLC：2,097,152 字节（2 MiB）；ESP32：2,621,440 字节（2.5 MiB）。整包最多 6,291,456 字节（6 MiB），含包头和对齐。加载和生成都会检查。\r\n\r\nFTP\r\n生成后默认上传该联合包，也可独立选任意本地文件。联合包上传前校验；普通文件不做包格式校验。打开 FTP 目录可查看服务器返回条目，同名仅比较名称。普通 FTP 明文传输，服务器同名文件可能覆盖。\r\n\r\n查看包头\r\n生成成功后可查看本次包最前 4096 字节；只读，不改变文件，也不读取后续固件内容。地址范围 0x0000～0x0FFF。\r\n\r\n设备升级\r\n生成的联合包会自动关联至升级页面，也可拖入或选择其他 BIN。本地网口协议与远程运营平台接口尚未接入，当前不能执行升级。";
+                text.Text = "文件与版本\r\n名称为文件名去掉 .bin；版本取下划线后的 V/v 至下一个下划线或点，保留大小写。名称/版本可修改，各最多 39 个 UTF-8 字节。手动选入缺版本文件后须补填才能生成。\r\n\r\n一键加载\r\n仅扫描当前文件夹；按开头 PFC、LLC、M4、PLC、ESP32 识别 .bin，大小写不敏感。同类唯一且有效才更新；多文件、缺版本或无效项保留原选择并提示。一键清理不删除磁盘文件，不清 FTP 配置和输出位置。\r\n\r\n大小限制\r\n文件不可为空。PFC/LLC 预算：256,000 字节（250 KiB）；M4 预算：524,288 字节（512 KiB）；PLC 预算：2,097,152 字节（2 MiB）。超过预算提示但可继续。ESP32 上限：2,621,440 字节（2.5 MiB）；整包最多 6,291,456 字节（6 MiB），含包头和对齐。加载和生成都会检查。\r\n\r\nFTP\r\n生成后默认上传该联合包，也可独立选任意本地文件。联合包上传前校验；普通文件不做包格式校验。打开 FTP 目录可查看服务器返回条目，同名仅比较名称。普通 FTP 明文传输，服务器同名文件可能覆盖。\r\n\r\n查看包头\r\n生成成功后可查看本次包最前 4096 字节；只读，不改变文件，也不读取后续固件内容。地址范围 0x0000～0x0FFF。\r\n\r\n设备升级\r\n生成的联合包会自动关联至升级页面，也可拖入或选择其他 BIN。本地网口协议与远程运营平台接口尚未接入，当前不能执行升级。";
                 text.Text += "\r\n\r\n界面配色\r\n点击顶部右侧色圈即可切换界面配色，选中项带外环；首次为银色，之后恢复上次选择。";
                 help.Padding = new Padding(20); help.Controls.Add(text);
                 help.Shown += delegate { text.Select(0, 0); };
@@ -955,7 +955,12 @@ namespace SeccFirmwarePackager
                     FirmwareFileName.TryParse(candidates[0], out type, out name, out version);
                     if (String.IsNullOrEmpty(version))
                     { error = true; messages.Add(row.Type + "：文件名缺少版本，未加载，保留原选择。"); continue; }
-                    try { SetInputFile(row, candidates[0]); loaded++; messages.Add(row.Type + "：已加载 " + name); }
+                    try
+                    {
+                        PackageReport inputReport = SetInputFile(row, candidates[0]);
+                        loaded++; messages.Add(row.Type + "：已加载 " + name);
+                        foreach (string warning in inputReport.Warnings) messages.Add("警告：" + warning);
+                    }
                     catch (Exception ex)
                     {
                         if (!(ex is InvalidDataException || ex is IOException || ex is UnauthorizedAccessException || ex is ArgumentException)) throw;
@@ -994,7 +999,7 @@ namespace SeccFirmwarePackager
             }
         }
 
-        private void SetInputFile(Row row, string path)
+        private PackageReport SetInputFile(Row row, string path)
         {
             if (String.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 throw new InvalidDataException(row.Type + " 固件文件不存在或不可读取。");
@@ -1010,7 +1015,7 @@ namespace SeccFirmwarePackager
                 throw new InvalidDataException("文件名类型为 " + detected + "，不能加载到 " + row.Type + " 栏。");
             // Reuse the package's UTF-8, empty-file and size protections before changing UI state.
             // Missing manual versions remain genuinely empty and must be filled before generating.
-            Packager.Plan(new FirmwareInput[] { new FirmwareInput { Type = row.Type, Path = path, Name = name, Version = String.IsNullOrEmpty(version) ? "待填写" : version } });
+            PackageReport inputReport = Packager.Plan(new FirmwareInput[] { new FirmwareInput { Type = row.Type, Path = path, Name = name, Version = String.IsNullOrEmpty(version) ? "待填写" : version } });
             changing = true;
             try
             {
@@ -1022,6 +1027,11 @@ namespace SeccFirmwarePackager
             finally { changing = false; }
             if (!loadingFolder) ShowInputResult("已添加 " + row.Type + " 固件：" + Path.GetFileName(path), false);
             RefreshPreview();
+            if (!loadingFolder)
+                foreach (string warning in inputReport.Warnings)
+                    if (status.Text.IndexOf(warning, StringComparison.Ordinal) < 0)
+                        ShowInputResult("警告：" + warning, false);
+            return inputReport;
         }
 
         private static string[] DraggedFiles(DragEventArgs e)

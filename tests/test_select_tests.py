@@ -68,6 +68,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_tests_and_fixtures_select_their_own_suites(self):
         self.assertEqual(scope.select(["tests/FtpTests.cs"]), {"ftp", "desktop"})
+        self.assertEqual(scope.select(["tests/NewFormatContractTests.cs"]), {"core"})
         self.assertEqual(scope.select(["test-vectors/inputs/M4.bin"]), {"ftp", "vector", "desktop"})
         self.assertEqual(scope.select(["tests/ReleaseUiTests.cs"]), {"desktop"})
         self.assertEqual(scope.select([".github/scripts/publish_release.py"]), {"publisher"})

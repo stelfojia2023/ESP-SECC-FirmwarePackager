@@ -39,9 +39,14 @@ if ($LASTEXITCODE -ne 0) { throw 'Header viewer tests failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Core test compilation failed.' }
 & $coreExe (Join-Path $testRoot 'core results')
 if ($LASTEXITCODE -ne 0) { throw 'Core tests failed.' }
+$formatExe = Join-Path $testRoot 'NewFormatContractTests.exe'
+& $csc /nologo /codepage:65001 /target:exe /platform:x64 "/out:$formatExe" $core (Join-Path $root 'tests\NewFormatContractTests.cs')
+if ($LASTEXITCODE -ne 0) { throw 'New format contract compilation failed.' }
+& $formatExe (Join-Path $testRoot 'new format contract') (Join-Path $root 'tests\fixtures\legacy-v1-directory-0x80.bin')
+if ($LASTEXITCODE -ne 0) { throw 'New format contract tests failed.' }
 & $csc /nologo /codepage:65001 /target:exe /platform:x64 /main:FtpTests "/out:$ftpExe" $core $ftp $ftpTest
 if ($LASTEXITCODE -ne 0) { throw 'FTP test compilation failed.' }
-& $ftpExe $previousSample (Join-Path $testRoot 'ftp results')
+& $ftpExe $previousSample (Join-Path $testRoot 'ftp results') (Join-Path $root 'tests\fixtures\legacy-v1-directory-0x80.bin')
 if ($LASTEXITCODE -ne 0) { throw 'FTP tests failed.' }
 & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:GuiSmokeTests "/win32icon:$icon" "/out:$guiExe" $core $ftp $form $upgrade $ui $names $header $ftpTest $guiTest
 if ($LASTEXITCODE -ne 0) { throw 'GUI test compilation failed.' }
