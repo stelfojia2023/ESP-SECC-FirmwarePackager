@@ -51,6 +51,11 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Core test compilation failed.' }
         & $exe $coreResults
         if ($LASTEXITCODE -ne 0) { throw 'Core tests failed.' }
+        $formatExe = Join-Path $EvidenceDirectory 'NewFormatContractTests.exe'
+        & $csc /nologo /codepage:65001 /target:exe /platform:x64 "/out:$formatExe" $core (Join-Path $root 'tests\NewFormatContractTests.cs')
+        if ($LASTEXITCODE -ne 0) { throw 'New format contract compilation failed.' }
+        & $formatExe (Join-Path $EvidenceDirectory 'new-format-contract') (Join-Path $root 'tests\fixtures\legacy-v1-directory-0x80.bin')
+        if ($LASTEXITCODE -ne 0) { throw 'New format contract tests failed.' }
         python (Join-Path $root 'tests\independent_verify.py') $coreResults
         if ($LASTEXITCODE -ne 0) { throw 'Independent format verification failed.' }
     }
@@ -58,7 +63,7 @@ try {
         $exe = Join-Path $EvidenceDirectory 'FtpTests.exe'
         & $csc /nologo /codepage:65001 /target:exe /platform:x64 /main:FtpTests "/out:$exe" $core $ftp (Join-Path $root 'tests\FtpTests.cs')
         if ($LASTEXITCODE -ne 0) { throw 'FTP test compilation failed.' }
-        & $exe (Join-Path $root 'test-vectors\bundle-m4-esp32-v1.bin') (Join-Path $EvidenceDirectory 'ftp-results')
+        & $exe (Join-Path $root 'test-vectors\bundle-m4-esp32-v1.bin') (Join-Path $EvidenceDirectory 'ftp-results') (Join-Path $root 'tests\fixtures\legacy-v1-directory-0x80.bin')
         if ($LASTEXITCODE -ne 0) { throw 'FTP tests failed.' }
     }
     if ($selected -contains 'header') {

@@ -279,6 +279,7 @@ internal static class UiContractTests
         setFile.Invoke(form, new object[] { m4Row, noVersion });
         Assert(Find(form, "Name_M4").Text == "M4_manual" && Find(form, "Version_M4").Text == "", "manual missing version remains empty, no stale version");
         string limitsFolder = Path.Combine(work, "limits-fixtures"); Directory.CreateDirectory(limitsFolder);
+        string extrasFolder = Path.Combine(work, "limits-extra"); Directory.CreateDirectory(extrasFolder);
         string[] kinds = { "PFC", "LLC", "M4", "PLC", "ESP32" };
         int[] limits = { 256000, 256000, 524288, 2097152, 2621440 };
         System.Collections.IEnumerable allRows = (System.Collections.IEnumerable)t.GetField("rows", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form);
@@ -290,20 +291,45 @@ internal static class UiContractTests
             setFile.Invoke(form, new object[] { row, bound });
             Assert(Find(form, "Path_" + kinds[k]).Text == bound, "manual exact limit accepted " + kinds[k]);
             string oldName = Find(form, "Name_" + kinds[k]).Text;
-            foreach (int length in new[] { 0, limits[k] + 1 })
-            {
-                File.WriteAllBytes(bound, new byte[length]);
-                bool rejected = false;
-                try { setFile.Invoke(form, new object[] { row, bound }); }
-                catch (TargetInvocationException ex) { if (!(ex.InnerException is InvalidDataException)) throw; rejected = true; }
-                Assert(rejected && Find(form, "Name_" + kinds[k]).Text == oldName, "manual invalid size rejected transactionally " + kinds[k]);
-            }
+            string emptyFile = Path.Combine(extrasFolder, kinds[k] + "_empty.bin");
+            File.WriteAllBytes(emptyFile, new byte[0]);
+            bool rejected = false;
+            try { setFile.Invoke(form, new object[] { row, emptyFile }); }
+            catch (TargetInvocationException ex) { if (!(ex.InnerException is InvalidDataException)) throw; rejected = true; }
+            Assert(rejected && Find(form, "Name_" + kinds[k]).Text == oldName, "empty input preserves previous selection " + kinds[k]);
+            string overFile = Path.Combine(extrasFolder, kinds[k] + "_V2.bin");
+            File.WriteAllBytes(overFile, new byte[limits[k] + 1]);
+            int beforeManual = Find(form, "ResultDetails").Text.Length;
+            rejected = false;
+            try { setFile.Invoke(form, new object[] { row, overFile }); }
+            catch (TargetInvocationException ex) { if (!(ex.InnerException is InvalidDataException)) throw; rejected = true; }
+            if (k < 4)
+                Assert(!rejected && Find(form, "Path_" + kinds[k]).Text == overFile &&
+                       Find(form, "ResultDetails").Text.Substring(beforeManual).Contains(kinds[k] + " 固件实际大小") &&
+                       Find(form, "ResultDetails").Text.Substring(beforeManual).Contains("超过预算"),
+                       "over-budget input accepted and warned " + kinds[k]);
+            else
+                Assert(rejected && Find(form, "Path_" + kinds[k]).Text == bound, "ESP32 hard limit preserves previous selection");
             k++;
         }
-        load.Invoke(form, new object[] { limitsFolder });
+        string safeEsp = Path.Combine(extrasFolder, "ESP32_safe_V1.bin");
+        File.WriteAllBytes(safeEsp, new byte[limits[4]]);
+        object espRow = null;
+        foreach (object row in allRows)
+            if (row.GetType().GetField("Type").GetValue(row).ToString() == "ESP32") espRow = row;
+        setFile.Invoke(form, new object[] { espRow, safeEsp });
         for (k = 0; k < kinds.Length; k++)
-            Assert(Find(form, "Path_" + kinds[k]).Text == Path.Combine(limitsFolder, kinds[k] + "_V1.bin"), "oversized batch preserves old selection " + kinds[k]);
-        Assert(Find(form, "ResultDetails").Text.Contains("上限"), "batch oversized reason reported");
+            File.WriteAllBytes(Path.Combine(limitsFolder, kinds[k] + "_V1.bin"), new byte[limits[k] + 1]);
+        int beforeBatch = Find(form, "ResultDetails").Text.Length;
+        load.Invoke(form, new object[] { limitsFolder });
+        for (k = 0; k < 4; k++)
+            Assert(Find(form, "Path_" + kinds[k]).Text == Path.Combine(limitsFolder, kinds[k] + "_V1.bin"), "over-budget batch loads " + kinds[k]);
+        Assert(Find(form, "Path_ESP32").Text == safeEsp, "oversized ESP32 batch preserves old selection");
+        string batchResults = Find(form, "ResultDetails").Text.Substring(beforeBatch);
+        Assert(batchResults.Contains("ESP32") && batchResults.Contains("上限"), "ESP32 rejection reported");
+        foreach (string kind in new[] { "PFC", "LLC", "M4", "PLC" })
+            Assert(batchResults.Contains(kind + " 固件实际大小") && batchResults.Contains("超过预算"),
+                   "one-click load reports budget warning " + kind);
         ((Button)Find(form, "ClearAllButton")).PerformClick();
         foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
             foreach (string prefix in new[] { "Path_", "Name_", "Version_" })
@@ -341,7 +367,7 @@ internal static class UiContractTests
                 {
                     TextBox text = (TextBox)Find(help, "HelpText");
                     Assert(help.Modal && text != null && text.ReadOnly, "help is modal and read-only");
-                    foreach (string term in new[] { "96/64", "256,000", "524,288", "2,097,152", "2,621,440", "6,291,456", "4096", "0x0FFF", "FTP", "明文", "一键清理" })
+                    foreach (string term in new[] { "39", "预算", "256,000", "524,288", "2,097,152", "2,621,440", "6,291,456", "4096", "0x0FFF", "FTP", "明文", "一键清理" })
                         Assert(text.Text.Contains(term), "help contains " + term);
                     File.WriteAllText(Path.Combine(work, "help-text.txt"), text.Text);
                     using (Bitmap image = new Bitmap(help.Width, help.Height))
@@ -539,8 +565,8 @@ internal static class UiContractTests
             Environment.SetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR", Path.Combine(Path.GetTempPath(), "secc-ui-contract-" + Guid.NewGuid().ToString("N")));
             Application.EnableVisualStyles();
             Assembly app = Assembly.LoadFrom(Path.GetFullPath(args[0]));
-            Assert(app.GetName().Version.ToString() == "0.0.5.0" &&
-                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.5.0",
+            Assert(app.GetName().Version.ToString() == "0.0.6.0" &&
+                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.6.0",
                 "assembly and file version match release");
             foreach (string sound in new[] { "click", "success", "failure" })
                 using (Stream stream = app.GetManifestResourceStream("Sounds." + sound + ".wav"))
@@ -552,7 +578,7 @@ internal static class UiContractTests
                 Assert(Find(form, "FtpUser").Text == "", "FTP user defaults empty");
                 Assert(Find(form, "FtpPassword").Text == "" &&
                     ((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "empty FTP password is masked");
-                Assert(form.Text.Contains("V0.0.5"), "tool version separated from format");
+                Assert(form.Text.Contains("V0.0.6"), "tool version separated from format");
                 MethodInfo applyAddress = form.GetType().GetMethod("ApplyFtpAddress", BindingFlags.Instance | BindingFlags.NonPublic);
                 Find(form, "FtpUser").Text = "synthetic-first";
                 Find(form, "FtpPassword").Text = "synthetic-only";

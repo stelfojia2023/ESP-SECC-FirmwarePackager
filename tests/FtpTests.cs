@@ -160,7 +160,7 @@ internal static class FtpTests
         Console.WriteLine("PASS FTP address parsing, credential masking and encoded characters");
     }
 
-    private static void UploadTests(string packagePath, string work)
+    private static void UploadTests(string packagePath, string work, string legacyPath)
     {
         byte[] expected = File.ReadAllBytes(packagePath);
         using (Server server = new Server("test-user", "fake.with.dot", 226))
@@ -183,6 +183,28 @@ internal static class FtpTests
             Check(server.StoredPath == "/目录 测试/固件 包 测试.bin", "Unicode or space in remote path was not preserved: " + server.StoredPath);
             Check(server.Uploaded != null && Convert.ToBase64String(server.Uploaded) == Convert.ToBase64String(expected), "Unicode-path upload bytes mismatch");
         }
+        string input = Path.Combine(work, "PFC-over-budget.bin");
+        File.WriteAllBytes(input, new byte[250 * 1024 + 1]);
+        string overPackage = Path.Combine(work, "over-budget-package.bin");
+        PackageReport overReport = Packager.Build(new[] {
+            new FirmwareInput { Type = FirmwareType.PFC, Path = input, Name = "PFC", Version = "V1" }
+        }, overPackage);
+        Check(overReport.Warnings.Count == 1, "Over-budget package must retain warning");
+        byte[] overBytes = File.ReadAllBytes(overPackage);
+        using (Server server = new Server("test-user", "fake-password", 226))
+        {
+            string address = "ftp://127.0.0.1:" + server.Port + "/upgrade";
+            FtpUploadResult result = FtpUploader.Upload(overPackage, address, "test-user", "fake-password");
+            Check(result.StatusCode == 226 && server.Uploaded != null &&
+                  Convert.ToBase64String(server.Uploaded) == Convert.ToBase64String(overBytes),
+                  "Over-budget package must pass upload validation and retain exact bytes");
+        }
+        using (Server server = new Server("test-user", "fake-password", 226))
+        {
+            string address = "ftp://127.0.0.1:" + server.Port + "/upgrade";
+            MustFail(delegate { FtpUploader.Upload(legacyPath, address, "test-user", "fake-password"); }, "目录", null);
+            Check(!server.SawWriteCommand && server.Uploaded == null, "Legacy package must be rejected before transfer");
+        }
         using (Server server = new Server("correct", "fake-password", 226))
         {
             string address = "ftp://wrong:do-not-print@127.0.0.1:" + server.Port + "/upgrade";
@@ -203,7 +225,7 @@ internal static class FtpTests
         string corrupt = Path.Combine(work, "invalid-package.bin");
         File.WriteAllBytes(corrupt, new byte[] { 1, 2, 3 });
         MustFail(delegate { FtpUploader.Upload(corrupt, "ftp://127.0.0.1/upgrade", "test", "fake"); }, "截断", "fake");
-        Console.WriteLine("PASS loopback FTP: 226 success and byte match, auth failure, write refusal, final 451 failure and invalid package");
+        Console.WriteLine("PASS loopback FTP: new and over-budget packages, legacy rejection, byte match and failure paths");
     }
 
     private static void OrdinaryFileTests(string work)
@@ -320,12 +342,12 @@ internal static class FtpTests
     {
         try
         {
-            if (args.Length != 2) throw new Exception("Usage: FtpTests.exe <V1 sample> <fresh directory>");
+            if (args.Length != 3) throw new Exception("Usage: FtpTests.exe <V1 sample> <fresh directory> <legacy package>");
             string work = Path.GetFullPath(args[1]);
             if (Directory.Exists(work)) throw new Exception("Test directory already exists.");
             Directory.CreateDirectory(work);
             AddressTests();
-            UploadTests(Path.GetFullPath(args[0]), work);
+            UploadTests(Path.GetFullPath(args[0]), work, Path.GetFullPath(args[2]));
             OrdinaryFileTests(work);
             DirectoryTests();
             Console.WriteLine("PASS FTP assertions=" + checks);

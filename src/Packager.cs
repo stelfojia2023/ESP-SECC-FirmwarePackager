@@ -43,9 +43,11 @@ namespace SeccFirmwarePackager
         public const int Alignment = 4096;
         public const int MaxPackageSize = 6 * 1024 * 1024;
         public const int MaxEsp32Size = 5 * 1024 * 1024 / 2;
-        public const int DirectoryOffset = 128;
+        public const int DirectoryOffset = 0x28;
         public const int EntrySize = 256;
         public const int PackageMd5Offset = 24;
+        public const int MetadataSlotSize = 40;
+        public const int MaxMetadataBytes = MetadataSlotSize - 1;
         private static readonly byte[] Magic = Encoding.ASCII.GetBytes("SECCPKG1");
         private static readonly UTF8Encoding Utf8 = new UTF8Encoding(false, true);
 
@@ -90,8 +92,10 @@ namespace SeccFirmwarePackager
         private static void AddBudgetWarning(PackageReport report, FirmwareType type, long size)
         {
             int budget = Budget(type);
-            if (size > budget)
-                throw new InvalidDataException(String.Format("{0} 固件实际大小 {1:N0} 字节，超过本类型上限 {2:N0} 字节，不能加载或打包。", type, size, budget));
+            if (size <= budget) return;
+            if (type == FirmwareType.ESP32)
+                throw new InvalidDataException(String.Format("{0} 固件实际大小 {1:N0} 字节，超过上限 {2:N0} 字节，不能加载或打包。", type, size, budget));
+            report.Warnings.Add(String.Format("{0} 固件实际大小 {1:N0} 字节，超过预算 {2:N0} 字节，可继续打包。", type, size, budget));
         }
 
         public static PackageReport Plan(IEnumerable<FirmwareInput> inputs)
@@ -115,8 +119,8 @@ namespace SeccFirmwarePackager
                 if (last == input.Type) throw new InvalidDataException("固件类型重复：" + input.Type);
                 last = input.Type;
                 if (String.IsNullOrWhiteSpace(input.Path)) throw new InvalidDataException(input.Type + " 未选择固件文件。");
-                CheckText(input.Name, 96, input.Type + " 固件名称");
-                CheckText(input.Version, 64, input.Type + " 固件版本");
+                CheckText(input.Name, MaxMetadataBytes, input.Type + " 固件名称");
+                CheckText(input.Version, MaxMetadataBytes, input.Type + " 固件版本");
                 long size;
                 try
                 {
@@ -196,11 +200,11 @@ namespace SeccFirmwarePackager
 
         private static string ReadText(byte[] data, int offset, int length, int capacity, string label)
         {
-            if (length < 1 || length > capacity) throw new InvalidDataException(label + "长度无效。");
+            if (length < 1 || length >= capacity) throw new InvalidDataException(label + "长度无效。");
             string result;
             try { result = Utf8.GetString(data, offset, length); }
             catch (DecoderFallbackException) { throw new InvalidDataException(label + "不是有效的 UTF-8。"); }
-            CheckText(result, capacity, label);
+            CheckText(result, capacity - 1, label);
             CheckZero(data, offset + length, offset + capacity, label + "未使用区域");
             return result;
         }
@@ -219,7 +223,6 @@ namespace SeccFirmwarePackager
             if (count < 1 || count > 5) throw new InvalidDataException("固件数量必须为 1～5。");
             if (Get16(data, 18) != EntrySize || Get32(data, 20) != DirectoryOffset)
                 throw new InvalidDataException("固件目录格式不受支持。");
-            CheckZero(data, 40, DirectoryOffset, "包头预留区");
             CheckZero(data, DirectoryOffset + count * EntrySize, HeaderSize, "未使用的目录和包头区域");
             PackageReport report = new PackageReport();
             report.TotalSize = (uint)data.Length;
@@ -233,15 +236,14 @@ namespace SeccFirmwarePackager
                 if (typeValue < 1 || typeValue > 5 || typeValue <= previousType)
                     throw new InvalidDataException("固件类型不支持、重复或未按规定顺序排列。");
                 previousType = typeValue;
-                CheckZero(data, baseOffset + 2, baseOffset + 4, "目录预留区");
-                CheckZero(data, baseOffset + 192, baseOffset + EntrySize, "目录扩展预留区");
+                CheckZero(data, baseOffset + 0x6E, baseOffset + EntrySize, "目录扩展预留区");
                 FirmwareEntry entry = new FirmwareEntry();
                 entry.Type = (FirmwareType)typeValue;
                 entry.Offset = Get32(data, baseOffset + 4);
                 entry.Size = Get32(data, baseOffset + 8);
                 entry.Md5 = Slice(data, baseOffset + 12, 16);
-                entry.Name = ReadText(data, baseOffset + 32, Get16(data, baseOffset + 28), 96, entry.Type + " 固件名称");
-                entry.Version = ReadText(data, baseOffset + 128, Get16(data, baseOffset + 30), 64, entry.Type + " 固件版本");
+                entry.Name = ReadText(data, baseOffset + 0x1E, Get16(data, baseOffset + 2), MetadataSlotSize, entry.Type + " 固件名称");
+                entry.Version = ReadText(data, baseOffset + 0x46, Get16(data, baseOffset + 0x1C), MetadataSlotSize, entry.Type + " 固件版本");
                 if (entry.Size == 0) throw new InvalidDataException(entry.Type + " 固件大小为零。");
                 if (entry.Offset != next || entry.Offset % Alignment != 0)
                     throw new InvalidDataException(entry.Type + " 固件偏移错误、未对齐、区域重叠或存在额外空隙。");
@@ -375,10 +377,10 @@ namespace SeccFirmwarePackager
                 Buffer.BlockCopy(entry.Md5, 0, data, p + 12, 16);
                 byte[] name = Utf8.GetBytes(entry.Name);
                 byte[] version = Utf8.GetBytes(entry.Version);
-                Put16(data, p + 28, (ushort)name.Length);
-                Put16(data, p + 30, (ushort)version.Length);
-                Buffer.BlockCopy(name, 0, data, p + 32, name.Length);
-                Buffer.BlockCopy(version, 0, data, p + 128, version.Length);
+                Put16(data, p + 2, (ushort)name.Length);
+                Put16(data, p + 0x1C, (ushort)version.Length);
+                Buffer.BlockCopy(name, 0, data, p + 0x1E, name.Length);
+                Buffer.BlockCopy(version, 0, data, p + 0x46, version.Length);
             }
             byte[] hash = Hash(data, 0, data.Length);
             Buffer.BlockCopy(hash, 0, data, PackageMd5Offset, 16);

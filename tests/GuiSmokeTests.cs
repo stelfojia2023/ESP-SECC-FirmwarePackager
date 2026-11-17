@@ -240,7 +240,7 @@ internal static class GuiSmokeTests
                     {
                         string input = Path.Combine(workDir, "M4 固件 文件.bin");
                         string output = Path.Combine(workDir, "联合 固件 包.bin");
-                        if (!form.Text.Contains("V0.0.5")) throw new Exception("Tool version must be independent from package format V1");
+                        if (!form.Text.Contains("V0.0.6")) throw new Exception("Tool version must be independent from package format V1");
                         if (form.Controls.Find("FtpToggle", true).Length != 0 || form.Controls.Find("FtpDialog", true).Length != 0)
                             throw new Exception("FTP must be inline without toggle or dialog");
                         if (form.Controls.Find("BrandHeader", true).Length != 0) throw new Exception("Redundant brand banner must not be present");
@@ -308,14 +308,20 @@ internal static class GuiSmokeTests
                         TestUpgradeDrag(form, output);
                         Find<Button>(form, "Clear_M4").PerformClick();
                         if (preview.Rows.Count != 0 || preview.Visible) throw new Exception("Cleared preview must hide without empty rows");
-                        string overBudget = Path.Combine(workDir, "PFC 超限.bin");
+                        string overBudget = Path.Combine(workDir, "PFC 超预算.bin");
                         File.WriteAllBytes(overBudget, new byte[250 * 1024 + 1]);
-                        // Bypass the read-only control programmatically to exercise final Plan guard.
+                        // Bypass the read-only control to exercise preview and generation together.
                         Find<TextBox>(form, "Path_PFC").Text = overBudget;
-                        Find<TextBox>(form, "Name_PFC").Text = "PFC 超限";
+                        Find<TextBox>(form, "Name_PFC").Text = "PFC 超预算";
                         Find<TextBox>(form, "Version_PFC").Text = "V000B01D15";
-                        if (!Find<RichTextBox>(form, "ResultDetails").Text.Contains("上限"))
-                            throw new Exception("Oversized file rejection must be visible before generation");
+                        if (!Find<RichTextBox>(form, "ResultDetails").Text.Contains("超过预算"))
+                            throw new Exception("Budget warning must be visible before generation");
+                        string overOutput = Path.Combine(workDir, "over-budget.bin");
+                        Find<TextBox>(form, "OutputPath").Text = overOutput;
+                        Find<Button>(form, "BuildButton").PerformClick();
+                        if (!File.Exists(overOutput) || Packager.VerifyFile(overOutput).Warnings.Count != 1)
+                            throw new Exception("Over-budget firmware must still generate a validated package");
+                        Console.WriteLine("PASS GUI budget warning and successful package generation");
                         form.Refresh();
                         Application.DoEvents();
                         using (Bitmap picture = new Bitmap(form.Width, form.Height))

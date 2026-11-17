@@ -1,0 +1,61 @@
+{
+  "format": "SECCPKG1 V1 (directory 0x28)",
+  "bundle_file": "bundle-five-v1.bin",
+  "total_bytes": 36864,
+  "total_hex": "0x9000",
+  "whole_md5_field_zeroed": "2c1f1b811a0a0c21be2ca1e2c6aff587",
+  "ordinary_final_file_md5": "781fb88f72e059e448016fb92efde8a4",
+  "bundle_sha256": "c6c9d41ac5b89fb5b2dae5c0cabca2d6d5b6c72678f5d9ca487c415d6ff29ee9",
+  "entries": [
+    {
+      "kind": 1,
+      "offset": 4096,
+      "size": 1,
+      "name": "PFC 固件 名称.bin",
+      "version": "V000B01D15",
+      "md5": "e4da3b7fbbce2345d7772b0674a318d5",
+      "type": "PFC",
+      "input_sha256": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d"
+    },
+    {
+      "kind": 2,
+      "offset": 8192,
+      "size": 4097,
+      "name": "LLC 固件 名称.bin",
+      "version": "V000B01D15",
+      "md5": "b5f2e07fd56ef4bca59c54bf4cdeda1f",
+      "type": "LLC",
+      "input_sha256": "6d71cf60fa0d15ff501ef41f6f0df2998e16c3da82690433c75b1a56eacc141d"
+    },
+    {
+      "kind": 3,
+      "offset": 16384,
+      "size": 8193,
+      "name": "M4 固件 名称.bin",
+      "version": "V000B01D15",
+      "md5": "57b3272a8046ef29be3b4e4303746fef",
+      "type": "M4",
+      "input_sha256": "b0de4f64d95979cdd012c0ab751a26d5e23999a6c09a53a38b84279d765bd863"
+    },
+    {
+      "kind": 4,
+      "offset": 28672,
+      "size": 137,
+      "name": "PLC 固件 名称.bin",
+      "version": "V000B01D15",
+      "md5": "0a306f15752d04a43ca039612c8f616e",
+      "type": "PLC",
+      "input_sha256": "ebfaf4320feb9ab47ab2d368f6099f6a39b37588e171a3961961eb5335df9e2d"
+    },
+    {
+      "kind": 5,
+      "offset": 32768,
+      "size": 4095,
+      "name": "ESP32 固件 名称.bin",
+      "version": "V000B01D15",
+      "md5": "2c37b8f8cbb48c2d783474068bfe353c",
+      "type": "ESP32",
+      "input_sha256": "b623824f67e3c23fa22c5f281e210f609efd98e558499c9eaaacb95796bfd379"
+    }
+  ]
+}

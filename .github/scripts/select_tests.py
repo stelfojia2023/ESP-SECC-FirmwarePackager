@@ -24,6 +24,7 @@ PATH_GROUPS = {
     "src/UpgradePage.cs": {"header", "ui", "appearance", "typography", "desktop"},
     "tests/FilenameRulesTests.cs": {"filename"},
     "tests/CoreTests.cs": {"core"},
+    "tests/NewFormatContractTests.cs": {"core"},
     "tests/FtpTests.cs": {"ftp", "desktop"},
     "tests/HeaderViewerTests.cs": {"header"},
     "tests/UiContractTests.cs": {"ui"},

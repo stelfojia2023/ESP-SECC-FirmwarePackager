@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import struct
 import sys
+import unicodedata
 from pathlib import Path
 
 KINDS = ("PFC", "LLC", "M4", "PLC", "ESP32")
@@ -19,13 +20,14 @@ def digest(data: bytes | bytearray) -> bytes:
 
 def read_package(path: Path) -> tuple[bytes, list[dict]]:
     data = path.read_bytes()
+    assert len(data) >= 4096, path
     magic, version, head, total, count, entry_size, directory, whole = struct.unpack_from(
         "<8sHHIHHI16s", data
     )
-    assert (magic, version, head, entry_size, directory) == (b"SECCPKG1", 1, 4096, 256, 128), path
+    assert (magic, version, head, entry_size, directory) == (b"SECCPKG1", 1, 4096, 256, 0x28), path
     assert total == len(data) and total <= 6 * 1024 * 1024 and total % 4096 == 0, path
     assert 1 <= count <= 5, path
-    assert not any(data[40:128]) and not any(data[128 + 256 * count : 4096]), path
+    assert not any(data[0x28 + 256 * count : 4096]), path
     zeroed = bytearray(data)
     zeroed[24:40] = bytes(16)
     assert digest(zeroed) == whole, path
@@ -33,17 +35,21 @@ def read_package(path: Path) -> tuple[bytes, list[dict]]:
     expected_offset = 4096
     previous = 0
     for index in range(count):
-        base = 128 + index * 256
-        kind, reserved, offset, size, file_md5, name_len, version_len = struct.unpack_from(
-            "<HHII16sHH", data, base
+        base = 0x28 + index * 256
+        kind, name_len, offset, size, file_md5, version_len = struct.unpack_from(
+            "<HHII16sH", data, base
         )
-        assert 1 <= kind <= 5 and kind > previous and reserved == 0, path
-        assert 0 < name_len <= 96 and 0 < version_len <= 64, path
-        name = data[base + 32 : base + 32 + name_len].decode("utf-8", "strict")
-        version_text = data[base + 128 : base + 128 + version_len].decode("utf-8", "strict")
-        assert not any(data[base + 32 + name_len : base + 128]), path
-        assert not any(data[base + 128 + version_len : base + 256]), path
-        assert offset == expected_offset and offset % 4096 == 0 and 0 < size <= BUDGETS[kind - 1], path
+        assert 1 <= kind <= 5 and kind > previous, path
+        assert 0 < name_len <= 39 and 0 < version_len <= 39, path
+        name = data[base + 0x1E : base + 0x1E + name_len].decode("utf-8", "strict")
+        version_text = data[base + 0x46 : base + 0x46 + version_len].decode("utf-8", "strict")
+        assert name.strip() and version_text.strip(), path
+        assert not any(unicodedata.category(c) == "Cc" for c in name + version_text), path
+        assert not any(data[base + 0x1E + name_len : base + 0x46]), path
+        assert not any(data[base + 0x46 + version_len : base + 0x6E]), path
+        assert not any(data[base + 0x6E : base + 0x100]), path
+        assert offset == expected_offset and offset % 4096 == 0 and size > 0, path
+        assert kind != 5 or size <= BUDGETS[4], path
         end = offset + size
         assert end <= total and digest(data[offset:end]) == file_md5, path
         expected_offset = (end + 4095) // 4096 * 4096
@@ -80,12 +86,17 @@ def check_budget(root: Path) -> None:
     print("PASS independent parser: budget vector 0x57F000 and five original files")
 
 
-def check_hard_limits(root: Path) -> None:
+def check_limits(root: Path) -> None:
     for kind, limit in zip(KINDS, BUDGETS):
         data, entries = read_package(root / f"limit-{kind}.bin")
         assert len(entries) == 1 and entries[0]["size"] == limit
-        assert not (root / f"rejected-{kind}.bin").exists()
-    print("PASS independent parser: five exact-limit packages, rejected outputs absent")
+        if kind != "ESP32":
+            _, entries = read_package(root / f"over-budget-{kind}.bin")
+            assert len(entries) == 1 and entries[0]["size"] == limit + 1
+    assert not (root / "rejected-ESP32.bin").exists()
+    data, entries = read_package(root / "exact-6MiB.bin")
+    assert len(data) == 6 * 1024 * 1024 and len(entries) == 1
+    print("PASS independent parser: soft budgets, ESP32 limit and exact 6 MiB package")
 
 
 if __name__ == "__main__":
@@ -94,5 +105,5 @@ if __name__ == "__main__":
     test_root = Path(sys.argv[1])
     check_combinations(test_root)
     check_budget(test_root)
-    check_hard_limits(test_root)
+    check_limits(test_root)
 
