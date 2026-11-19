@@ -421,7 +421,7 @@ namespace SeccFirmwarePackager
         {
             UiColors.Apply(AppearanceSettings.Load());
             upgradePage = new UpgradePage();
-            Text = "打包工具 · V0.0.6"; Name = "MainForm";
+            Text = "打包工具 · V0.0.7"; Name = "MainForm";
             MinimumSize = new Size(1100, 720);
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
             Size = new Size(Math.Max(1100, Math.Min(1320, work.Width - 24)), Math.Max(720, Math.Min(792, work.Height - 24)));
@@ -777,7 +777,7 @@ namespace SeccFirmwarePackager
             {
                 if (!e.Control || e.KeyCode != Keys.V) return;
                 e.SuppressKeyPress = true;
-                try { SetInputFile(row, Clipboard.GetText().Trim().Trim('"')); }
+                try { SetInputFile(row, ClipboardFirmwarePath()); }
                 catch (Exception ex) { ShowInputResult(ex.Message, true); }
             };
             row.PathBox.AllowDrop = true;
@@ -1032,6 +1032,38 @@ namespace SeccFirmwarePackager
                     if (status.Text.IndexOf(warning, StringComparison.Ordinal) < 0)
                         ShowInputResult("警告：" + warning, false);
             return inputReport;
+        }
+
+        private static string ClipboardFirmwarePath()
+        {
+            return ReadClipboardFirmwarePath(Clipboard.GetDataObject);
+        }
+
+        internal static string ReadClipboardFirmwarePath(Func<IDataObject> readClipboard)
+        {
+            ExternalException lastError = null;
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                try
+                {
+                    IDataObject data = readClipboard();
+                    if (data != null && data.GetDataPresent(DataFormats.FileDrop))
+                    {
+                        string[] files = data.GetData(DataFormats.FileDrop) as string[];
+                        if (files != null && files.Length > 1)
+                            throw new InvalidDataException("请复制一个 BIN 固件文件。");
+                        if (files != null && files.Length == 1) return files[0];
+                    }
+                    else if (data != null && data.GetDataPresent(DataFormats.UnicodeText))
+                    {
+                        string text = data.GetData(DataFormats.UnicodeText) as string;
+                        if (!String.IsNullOrWhiteSpace(text)) return text.Trim().Trim('"');
+                    }
+                }
+                catch (ExternalException ex) { lastError = ex; }
+                if (attempt < 4) Thread.Sleep(25);
+            }
+            throw new InvalidDataException("请复制一个 BIN 固件文件或文件路径后重试。", lastError);
         }
 
         private static string[] DraggedFiles(DragEventArgs e)

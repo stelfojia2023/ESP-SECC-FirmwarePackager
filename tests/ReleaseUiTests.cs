@@ -40,6 +40,7 @@ internal static class ReleaseUiTests
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out PointNative point);
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(PointNative point);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll")] private static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
 
     private sealed class Node
@@ -295,6 +296,18 @@ internal static class ReleaseUiTests
                     }
                     finally
                     {
+                        PointNative finalPosition;
+                        GetCursorPos(out finalPosition);
+                        uint actualProcess, targetProcess;
+                        GetWindowThreadProcessId(WindowFromPoint(finalPosition), out actualProcess);
+                        GetWindowThreadProcessId(target, out targetProcess);
+                        if (actualProcess != targetProcess)
+                        {
+                            failure = new Exception("Another application covers the test drop target.");
+                            keybd_event(0x1B, 0, 0, UIntPtr.Zero);
+                            keybd_event(0x1B, 0, 2, UIntPtr.Zero);
+                            Thread.Sleep(100);
+                        }
                         mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
                         Console.WriteLine("Native drag mouse-up sent");
                     }
@@ -338,6 +351,52 @@ internal static class ReleaseUiTests
         if (!started || effect != DragDropEffects.Copy) throw new Exception("Native file drag was not accepted by the application.");
     }
 
+    private static void PasteCopiedFile(IntPtr root, IntPtr target, string path)
+    {
+        IDataObject previous = Clipboard.GetDataObject();
+        PointNative oldCursor; GetCursorPos(out oldCursor);
+        try
+        {
+            System.Collections.Specialized.StringCollection files = new System.Collections.Specialized.StringCollection();
+            files.Add(path);
+            Clipboard.SetFileDropList(files);
+            Rect bounds;
+            if (!GetWindowRect(target, out bounds)) throw new Exception("Cannot locate the clipboard input target.");
+            SetForegroundWindow(root);
+            SetCursorPos((bounds.Left + bounds.Right) / 2, (bounds.Top + bounds.Bottom) / 2);
+            Thread.Sleep(100);
+            PointNative actual; GetCursorPos(out actual);
+            uint pointerProcess, appProcess;
+            GetWindowThreadProcessId(WindowFromPoint(actual), out pointerProcess);
+            GetWindowThreadProcessId(root, out appProcess);
+            if (pointerProcess != appProcess) throw new Exception("Another application covers the paste target.");
+            mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+            mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+            Thread.Sleep(200);
+            if (GetForegroundWindow() != root) throw new Exception("Cannot focus the application for Ctrl+V.");
+            keybd_event(0x11, 0, 0, UIntPtr.Zero);
+            keybd_event(0x56, 0, 0, UIntPtr.Zero);
+            keybd_event(0x56, 0, 2, UIntPtr.Zero);
+            keybd_event(0x11, 0, 2, UIntPtr.Zero);
+            WaitUntil(delegate { return Describe(target).Text == path; }, "Native Ctrl+V did not import the copied firmware file.");
+        }
+        finally
+        {
+            try
+            {
+                if (Clipboard.ContainsFileDropList())
+                {
+                    System.Collections.Specialized.StringCollection current = Clipboard.GetFileDropList();
+                    if (current.Count == 1 && current[0] == path)
+                    {
+                        if (previous == null) Clipboard.Clear(); else Clipboard.SetDataObject(previous, true);
+                    }
+                }
+            }
+            finally { SetCursorPos(oldCursor.X, oldCursor.Y); }
+        }
+    }
+
     [STAThread]
     public static int Main(string[] args)
     {
@@ -357,7 +416,7 @@ internal static class ReleaseUiTests
             WaitUntil(delegate { process.Refresh(); return process.MainWindowHandle != IntPtr.Zero; }, "Release GUI window did not appear.");
             Thread.Sleep(1000);
             process.Refresh();
-            if (!process.MainWindowTitle.Contains("V0.0.6")) throw new Exception("Release window version is incorrect.");
+            if (!process.MainWindowTitle.Contains("V0.0.7")) throw new Exception("Release window version is incorrect.");
             IntPtr root = process.MainWindowHandle;
             uint id = (uint)process.Id;
             string settings = Environment.GetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR");
@@ -380,6 +439,11 @@ internal static class ReleaseUiTests
             WaitUntil(delegate { return Describe(dropTarget.Handle).Text == input; }, "Native file drag did not populate the input path.");
             Node droppedName = EditInMetadataRow(root, browseM4, 0);
             if (Describe(droppedName.Handle).Text != Path.GetFileNameWithoutExtension(input)) throw new Exception("Native file drag did not populate the default name.");
+            string copiedInput = Path.Combine(work, "M4_复制固件_V1.bin");
+            File.WriteAllBytes(copiedInput, new byte[] { 5, 4, 3, 2, 1 });
+            PasteCopiedFile(root, dropTarget.Handle, copiedInput);
+            if (Describe(droppedName.Handle).Text != Path.GetFileNameWithoutExtension(copiedInput))
+                throw new Exception("Native file paste did not populate the default name.");
             Click(browseM4.Handle);
             ChooseFile(id, "选择 M4 固件", input);
             Node m4Path = EditInRow(root, browseM4, 0);
@@ -463,7 +527,7 @@ internal static class ReleaseUiTests
             if (ResultHistory(process.MainWindowHandle).Text != "") throw new Exception("Operation history persisted after the application closed.");
             process.CloseMainWindow();
             if (!process.WaitForExit(10000) || process.ExitCode != 0) throw new Exception("Reopened release did not close cleanly.");
-            Console.WriteLine("PASS delivered EXE: seven native swatch clicks, help, native drag, generate, header, upgrade page, timestamped history retained until restart; core rejects corruption" + (args.Length == 3 ? " and validates prior sample" : ""));
+            Console.WriteLine("PASS delivered EXE: seven native swatch clicks, help, native drag and clipboard paste, generate, header, upgrade page, timestamped history retained until restart; core rejects corruption" + (args.Length == 3 ? " and validates prior sample" : ""));
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL release UI " + ex); return 1; }
