@@ -2,9 +2,9 @@
 
 将 PFC、LLC、M4、PLC、ESP32 中的 1～5 份固件打包成一个 BIN，支持查看包头和上传 FTP。
 
-源码版本：V0.0.8（未发布）；以下为最近正式版。
+源码版本：V0.0.8（正式版）。
 
-[下载 V0.0.4 EXE](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/releases/download/v0.0.4/FirmwarePackager.exe) · [下载测试 BIN](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/raw/refs/heads/main/test-vectors/five-test-bins.zip) · [文档目录](docs/README.md)
+[下载 V0.0.8 EXE](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/releases/download/v0.0.8/FirmwarePackager.exe) · [下载测试 BIN](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/raw/refs/heads/main/test-vectors/five-test-bins.zip) · [文档目录](docs/README.md)
 
 支持 Windows 10/11 64 位，依赖系统的 .NET Framework 4.x。
 
