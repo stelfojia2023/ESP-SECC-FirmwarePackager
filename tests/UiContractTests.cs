@@ -339,6 +339,92 @@ internal static class UiContractTests
         Assert(((DataGridView)Find(form, "PreviewGrid")).Rows.Count == 0, "clear all removes preview rows");
         Assert(File.Exists(pfc) && File.Exists(manual) && File.Exists(noVersion), "clear all does not delete files");
     }
+    private static void TestPlcFirmwareWorkflow(Form form, string work)
+    {
+        Type t = form.GetType();
+        MethodInfo load = t.GetMethod("LoadFolder", BindingFlags.Instance | BindingFlags.NonPublic);
+        MethodInfo setFile = t.GetMethod("SetInputFile", BindingFlags.Instance | BindingFlags.NonPublic);
+        object plcRow = null, pfcRow = null;
+        foreach (object row in (System.Collections.IEnumerable)t.GetField("rows", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form))
+        {
+            string type = row.GetType().GetField("Type").GetValue(row).ToString();
+            if (type == "PLC") plcRow = row;
+            if (type == "PFC") pfcRow = row;
+        }
+        Assert(plcRow != null && pfcRow != null, "PLC and PFC rows exist");
+        string folder = Path.Combine(work, "plc-simage-fixtures"); Directory.CreateDirectory(folder);
+        string plc = Path.Combine(folder, "PLC_maya-2.6.7.10.simage");
+        string pfc = Path.Combine(folder, "PFC_maya-2.6.7.10.simage");
+        byte[] payload = new byte[8193];
+        for (int i = 0; i < payload.Length; i++) payload[i] = (byte)((i * 19 + 7) & 255);
+        File.WriteAllBytes(plc, payload); File.WriteAllBytes(pfc, new byte[] { 9, 8, 7 });
+        load.Invoke(form, new object[] { folder });
+        Assert(Find(form, "Path_PLC").Text == plc, "one-click loads PLC .simage");
+        Assert(Find(form, "Name_PLC").Text == "PLC_maya-2.6.7.10" && Find(form, "Version_PLC").Text == "maya-2.6.7.10", "PLC name and full maya version are parsed");
+        Assert(Find(form, "Path_PFC").Text == "", "one-click ignores non-BIN PFC");
+
+        string output = Path.Combine(work, "plc-simage-package.bin");
+        Find(form, "OutputPath").Text = output;
+        ((Button)Find(form, "BuildButton")).PerformClick(); Application.DoEvents();
+        Assert(File.Exists(output) && Find(form, "HeaderViewButton").Enabled, "PLC .simage generates a verified joint BIN");
+        byte[] bundle = File.ReadAllBytes(output);
+        int directory = 0x28;
+        int nameLength = BitConverter.ToUInt16(bundle, directory + 2);
+        int versionLength = BitConverter.ToUInt16(bundle, directory + 0x1C);
+        int dataOffset = (int)BitConverter.ToUInt32(bundle, directory + 4);
+        int dataSize = (int)BitConverter.ToUInt32(bundle, directory + 8);
+        Assert(BitConverter.ToUInt16(bundle, 0x10) == 1 && BitConverter.ToUInt16(bundle, directory) == 4,
+            "joint BIN contains one PLC directory entry");
+        Assert(Encoding.UTF8.GetString(bundle, directory + 0x1E, nameLength) == "PLC_maya-2.6.7.10" &&
+            Encoding.UTF8.GetString(bundle, directory + 0x46, versionLength) == "maya-2.6.7.10",
+            "joint BIN stores the exact PLC name and version");
+        bool samePayload = dataSize == payload.Length;
+        for (int i = 0; samePayload && i < payload.Length; i++) samePayload = bundle[dataOffset + i] == payload[i];
+        Assert(samePayload, "PLC firmware bytes are unchanged inside the joint BIN");
+        byte[] digest;
+        using (MD5 md5 = MD5.Create()) digest = md5.ComputeHash(payload);
+        bool sameMd5 = true;
+        for (int i = 0; i < digest.Length; i++) if (bundle[directory + 12 + i] != digest[i]) sameMd5 = false;
+        Assert(sameMd5, "PLC directory MD5 covers the original .simage bytes");
+        Assert(Find(form, "FtpFilePath").Text == output, "PLC package is passed to FTP");
+
+        string existingName = Find(form, "Name_PLC").Text;
+        bool rejected = false;
+        try { setFile.Invoke(form, new object[] { plcRow, pfc }); }
+        catch (TargetInvocationException ex) { if (!(ex.InnerException is InvalidDataException)) throw; rejected = true; }
+        Assert(rejected && Find(form, "Path_PLC").Text == plc && Find(form, "Name_PLC").Text == existingName,
+            "wrong type in PLC is rejected and previous selection preserved");
+        rejected = false;
+        try { setFile.Invoke(form, new object[] { pfcRow, pfc }); }
+        catch (TargetInvocationException ex) { if (!(ex.InnerException is InvalidDataException)) throw; rejected = true; }
+        Assert(rejected && Find(form, "Path_PFC").Text == "", "manual non-BIN PFC remains rejected");
+
+        string duplicate = Path.Combine(folder, "PLC_maya-2.6.7.11.other");
+        File.WriteAllBytes(duplicate, new byte[] { 3 });
+        string before = Find(form, "ResultDetails").Text;
+        load.Invoke(form, new object[] { folder });
+        Assert(Find(form, "Path_PLC").Text == plc && Find(form, "ResultDetails").Text.Substring(before.Length).Contains("2 个同类文件"),
+            "multiple PLC suffixes do not silently choose a file");
+
+        string original = Path.Combine(work, "maya-2.6.7.10.simage");
+        File.WriteAllBytes(original, new byte[] { 6, 7 });
+        setFile.Invoke(form, new object[] { plcRow, original });
+        Assert(Find(form, "Name_PLC").Text == "maya-2.6.7.10" && Find(form, "Version_PLC").Text == "maya-2.6.7.10", "manual PLC also accepts original maya filename");
+        string empty = Path.Combine(work, "PLC_maya-2.6.7.12.simage");
+        File.WriteAllBytes(empty, new byte[0]);
+        rejected = false;
+        try { setFile.Invoke(form, new object[] { plcRow, empty }); }
+        catch (TargetInvocationException ex) { if (!(ex.InnerException is InvalidDataException)) throw; rejected = true; }
+        Assert(rejected && Find(form, "Path_PLC").Text == original, "empty PLC .simage retains previous selection");
+        string noSuffixFolder = Path.Combine(work, "plc-no-suffix-fixtures"); Directory.CreateDirectory(noSuffixFolder);
+        string noSuffix = Path.Combine(noSuffixFolder, "PLC_maya-2.6.7.10");
+        File.WriteAllBytes(noSuffix, new byte[] { 1, 2 });
+        load.Invoke(form, new object[] { noSuffixFolder });
+        Assert(Find(form, "Path_PLC").Text == noSuffix && Find(form, "Name_PLC").Text == "PLC_maya-2.6.7.10" &&
+            Find(form, "Version_PLC").Text == "maya-2.6.7.10", "extensionless PLC keeps the final numeric version segment");
+        ((Button)Find(form, "ClearAllButton")).PerformClick();
+    }
+
     private static void TestHelpDialog(Form owner, string work)
     {
         Rectangle oldBounds = owner.Bounds;
@@ -565,8 +651,8 @@ internal static class UiContractTests
             Environment.SetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR", Path.Combine(Path.GetTempPath(), "secc-ui-contract-" + Guid.NewGuid().ToString("N")));
             Application.EnableVisualStyles();
             Assembly app = Assembly.LoadFrom(Path.GetFullPath(args[0]));
-            Assert(app.GetName().Version.ToString() == "0.0.7.0" &&
-                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.7.0",
+            Assert(app.GetName().Version.ToString() == "0.0.8.0" &&
+                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.8.0",
                 "assembly and file version match release");
             foreach (string sound in new[] { "click", "success", "failure" })
                 using (Stream stream = app.GetManifestResourceStream("Sounds." + sound + ".wav"))
@@ -578,7 +664,7 @@ internal static class UiContractTests
                 Assert(Find(form, "FtpUser").Text == "", "FTP user defaults empty");
                 Assert(Find(form, "FtpPassword").Text == "" &&
                     ((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "empty FTP password is masked");
-                Assert(form.Text.Contains("V0.0.7"), "tool version separated from format");
+                Assert(form.Text.Contains("V0.0.8"), "tool version separated from format");
                 MethodInfo applyAddress = form.GetType().GetMethod("ApplyFtpAddress", BindingFlags.Instance | BindingFlags.NonPublic);
                 Find(form, "FtpUser").Text = "synthetic-first";
                 Find(form, "FtpPassword").Text = "synthetic-only";
@@ -776,6 +862,7 @@ internal static class UiContractTests
                 }
                 TestHelpDialog(form, work);
                 TestFilenameWorkflow(form, work);
+                TestPlcFirmwareWorkflow(form, work);
                 form.Close();
             }
             TestResultHistory(app);

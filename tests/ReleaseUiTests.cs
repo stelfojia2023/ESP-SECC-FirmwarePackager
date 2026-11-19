@@ -416,7 +416,7 @@ internal static class ReleaseUiTests
             WaitUntil(delegate { process.Refresh(); return process.MainWindowHandle != IntPtr.Zero; }, "Release GUI window did not appear.");
             Thread.Sleep(1000);
             process.Refresh();
-            if (!process.MainWindowTitle.Contains("V0.0.7")) throw new Exception("Release window version is incorrect.");
+            if (!process.MainWindowTitle.Contains("V0.0.8")) throw new Exception("Release window version is incorrect.");
             IntPtr root = process.MainWindowHandle;
             uint id = (uint)process.Id;
             string settings = Environment.GetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR");
@@ -444,6 +444,20 @@ internal static class ReleaseUiTests
             PasteCopiedFile(root, dropTarget.Handle, copiedInput);
             if (Describe(droppedName.Handle).Text != Path.GetFileNameWithoutExtension(copiedInput))
                 throw new Exception("Native file paste did not populate the default name.");
+            string plcInput = Path.Combine(work, "PLC_maya-2.6.7.10.simage");
+            string copiedPlcInput = Path.Combine(work, "PLC_maya-2.6.7.11.simage");
+            File.WriteAllBytes(plcInput, new byte[] { 1, 3, 5, 7 });
+            File.WriteAllBytes(copiedPlcInput, new byte[] { 2, 4, 6, 8 });
+            Node browsePlc = Button(root, "选择 PLC 固件", 0);
+            Node plcPath = EditInRow(root, browsePlc, 0);
+            RealDrag(plcPath.Handle, plcInput);
+            WaitUntil(delegate { return Describe(plcPath.Handle).Text == plcInput; }, "Native PLC .simage drag did not populate path.");
+            Node plcVersion = EditInMetadataRow(root, browsePlc, 1);
+            if (Describe(plcVersion.Handle).Text != "maya-2.6.7.10") throw new Exception("Native PLC drag lost maya version.");
+            PasteCopiedFile(root, plcPath.Handle, copiedPlcInput);
+            if (Describe(plcVersion.Handle).Text != "maya-2.6.7.11") throw new Exception("Native PLC paste lost maya version.");
+            Click(Button(root, "清除 PLC 选择（不删除文件）", 0).Handle);
+            WaitUntil(delegate { return Describe(plcPath.Handle).Text == ""; }, "PLC input did not clear after native tests.");
             Click(browseM4.Handle);
             ChooseFile(id, "选择 M4 固件", input);
             Node m4Path = EditInRow(root, browseM4, 0);
@@ -527,7 +541,7 @@ internal static class ReleaseUiTests
             if (ResultHistory(process.MainWindowHandle).Text != "") throw new Exception("Operation history persisted after the application closed.");
             process.CloseMainWindow();
             if (!process.WaitForExit(10000) || process.ExitCode != 0) throw new Exception("Reopened release did not close cleanly.");
-            Console.WriteLine("PASS delivered EXE: seven native swatch clicks, help, native drag and clipboard paste, generate, header, upgrade page, timestamped history retained until restart; core rejects corruption" + (args.Length == 3 ? " and validates prior sample" : ""));
+            Console.WriteLine("PASS delivered EXE: seven native swatch clicks, help, native M4/PLC drag and clipboard paste, generate, header, upgrade page, timestamped history retained until restart; core rejects corruption" + (args.Length == 3 ? " and validates prior sample" : ""));
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine("FAIL release UI " + ex); return 1; }
