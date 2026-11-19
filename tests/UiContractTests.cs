@@ -565,8 +565,8 @@ internal static class UiContractTests
             Environment.SetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR", Path.Combine(Path.GetTempPath(), "secc-ui-contract-" + Guid.NewGuid().ToString("N")));
             Application.EnableVisualStyles();
             Assembly app = Assembly.LoadFrom(Path.GetFullPath(args[0]));
-            Assert(app.GetName().Version.ToString() == "0.0.6.0" &&
-                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.6.0",
+            Assert(app.GetName().Version.ToString() == "0.0.7.0" &&
+                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.7.0",
                 "assembly and file version match release");
             foreach (string sound in new[] { "click", "success", "failure" })
                 using (Stream stream = app.GetManifestResourceStream("Sounds." + sound + ".wav"))
@@ -578,7 +578,7 @@ internal static class UiContractTests
                 Assert(Find(form, "FtpUser").Text == "", "FTP user defaults empty");
                 Assert(Find(form, "FtpPassword").Text == "" &&
                     ((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "empty FTP password is masked");
-                Assert(form.Text.Contains("V0.0.6"), "tool version separated from format");
+                Assert(form.Text.Contains("V0.0.7"), "tool version separated from format");
                 MethodInfo applyAddress = form.GetType().GetMethod("ApplyFtpAddress", BindingFlags.Instance | BindingFlags.NonPublic);
                 Find(form, "FtpUser").Text = "synthetic-first";
                 Find(form, "FtpPassword").Text = "synthetic-only";

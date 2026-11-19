@@ -39,6 +39,92 @@ internal static class GuiSmokeTests
         return args;
     }
 
+    private static void PasteFirmware(TextBox path)
+    {
+        MethodInfo keyDown = typeof(Control).GetMethod("OnKeyDown", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (keyDown == null) throw new Exception("Missing key event method");
+        keyDown.Invoke(path, new object[] { new KeyEventArgs(Keys.Control | Keys.V) });
+        Application.DoEvents();
+    }
+
+    private static void TestFirmwareFileClipboard(MainForm form, string directory)
+    {
+        string delayedPath = Path.Combine(directory, "M4_V1_delayed.bin");
+        DataObject empty = new DataObject(); empty.SetData(DataFormats.UnicodeText, "");
+        DataObject ready = new DataObject(); ready.SetData(DataFormats.UnicodeText, "  \"" + delayedPath + "\"  ");
+        int attempts = 0;
+        string recovered = MainForm.ReadClipboardFirmwarePath(delegate { return ++attempts == 1 ? empty : ready; });
+        if (attempts != 2 || recovered != delayedPath) throw new Exception("Transient empty clipboard data must be retried");
+        IDataObject previous = Clipboard.GetDataObject();
+        string expectedText = null;
+        string[] expectedFiles = null;
+        try
+        {
+            foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
+            {
+                string first = Path.Combine(directory, type + "_V1_复制.bin");
+                string second = Path.Combine(directory, type + "_V2_粘贴.bin");
+                File.WriteAllBytes(first, new byte[] { 1, 2, 3 });
+                File.WriteAllBytes(second, new byte[] { 4, 5, 6 });
+                TextBox path = Find<TextBox>(form, "Path_" + type);
+                System.Collections.Specialized.StringCollection files = new System.Collections.Specialized.StringCollection();
+                files.Add(first);
+                Clipboard.SetFileDropList(files);
+                expectedFiles = new[] { first }; expectedText = null;
+                PasteFirmware(path);
+                if (path.Text != first || Find<TextBox>(form, "Name_" + type).Text != Path.GetFileNameWithoutExtension(first))
+                    throw new Exception("Pasting a copied firmware file must populate " + type);
+
+                expectedText = "  \"" + second + "\"  "; expectedFiles = null;
+                Clipboard.SetText(expectedText);
+                PasteFirmware(path);
+                if (path.Text != second)
+                {
+                    if (!Clipboard.ContainsText() || Clipboard.GetText() != expectedText)
+                        throw new Exception("Clipboard changed outside the test while pasting a firmware path");
+                    throw new Exception("Pasting a quoted firmware path must populate " + type);
+                }
+
+                RichTextBox history = Find<RichTextBox>(form, "ResultDetails");
+                if (type == "M4")
+                {
+                    string wrongType = Path.Combine(directory, "PFC_V1_复制.bin");
+                    files.Clear(); files.Add(wrongType);
+                    Clipboard.SetFileDropList(files);
+                    expectedFiles = new[] { wrongType }; expectedText = null;
+                    string beforeTypeError = history.Text;
+                    PasteFirmware(path);
+                    if (path.Text != second || !history.Text.Substring(beforeTypeError.Length).Contains("不能加载到 M4 栏"))
+                        throw new Exception("Pasting a mismatched type must leave M4 unchanged");
+                }
+                files.Clear(); files.Add(first); files.Add(second);
+                Clipboard.SetFileDropList(files);
+                expectedFiles = new[] { first, second }; expectedText = null;
+                string beforeMultipleError = history.Text;
+                PasteFirmware(path);
+                if (path.Text != second || !history.Text.Substring(beforeMultipleError.Length).Contains("请复制一个 BIN 固件文件"))
+                    throw new Exception("Pasting multiple files must report an error without replacing " + type);
+                Find<Button>(form, "Clear_" + type).PerformClick();
+            }
+            Console.WriteLine("PASS firmware clipboard: five types, copied file, quoted path and multiple-file protection");
+        }
+        finally
+        {
+            bool unchanged = false;
+            if (expectedFiles != null && Clipboard.ContainsFileDropList())
+            {
+                System.Collections.Specialized.StringCollection current = Clipboard.GetFileDropList();
+                unchanged = current.Count == expectedFiles.Length;
+                for (int i = 0; unchanged && i < current.Count; i++) unchanged = current[i] == expectedFiles[i];
+            }
+            else if (expectedText != null && Clipboard.ContainsText()) unchanged = Clipboard.GetText() == expectedText;
+            if (unchanged)
+            {
+                if (previous == null) Clipboard.Clear(); else Clipboard.SetDataObject(previous, true);
+            }
+        }
+    }
+
     private static void CheckButtonText(MainForm form)
     {
         foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
@@ -240,7 +326,7 @@ internal static class GuiSmokeTests
                     {
                         string input = Path.Combine(workDir, "M4 固件 文件.bin");
                         string output = Path.Combine(workDir, "联合 固件 包.bin");
-                        if (!form.Text.Contains("V0.0.6")) throw new Exception("Tool version must be independent from package format V1");
+                        if (!form.Text.Contains("V0.0.7")) throw new Exception("Tool version must be independent from package format V1");
                         if (form.Controls.Find("FtpToggle", true).Length != 0 || form.Controls.Find("FtpDialog", true).Length != 0)
                             throw new Exception("FTP must be inline without toggle or dialog");
                         if (form.Controls.Find("BrandHeader", true).Length != 0) throw new Exception("Redundant brand banner must not be present");
@@ -267,6 +353,7 @@ internal static class GuiSmokeTests
                                 throw new Exception("Output control is clipped or not visible: " + name);
                         }
                         File.WriteAllBytes(input, new byte[] { 1, 2, 3, 4, 5 });
+                        TestFirmwareFileClipboard(form, workDir);
                         TextBox pathBox = Find<TextBox>(form, "Path_M4");
                         if (!pathBox.AllowDrop || !pathBox.ReadOnly) throw new Exception("Path box must allow drag and prevent unvalidated typing");
                         if (SendDrag(pathBox, "OnDragEnter", new[] { input }).Effect != DragDropEffects.Copy)
