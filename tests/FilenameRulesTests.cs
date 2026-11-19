@@ -24,6 +24,15 @@ internal static class FilenameRulesTests
     {
         try
         {
+            Parsed("PLC_maya-2.6.7.10.simage", FirmwareType.PLC, "PLC_maya-2.6.7.10", "maya-2.6.7.10");
+            Parsed("PLC_maya-2.6.7.10_debug.hex", FirmwareType.PLC, "PLC_maya-2.6.7.10_debug", "maya-2.6.7.10");
+            Parsed("pLc_MaYa-2.6.7.10.BIN", FirmwareType.PLC, "pLc_MaYa-2.6.7.10", "MaYa-2.6.7.10");
+            Parsed("PLC_board_maya-2.6.7.10.custom", FirmwareType.PLC, "PLC_board_maya-2.6.7.10", "maya-2.6.7.10");
+            Parsed("PLC_maya-2.6.7.10", FirmwareType.PLC, "PLC_maya-2.6.7.10", "maya-2.6.7.10");
+            Parsed("PLC_maya-2.6.7.10_debug", FirmwareType.PLC, "PLC_maya-2.6.7.10_debug", "maya-2.6.7.10");
+            Parsed("PLC_maya-2.6.7.10.123", FirmwareType.PLC, "PLC_maya-2.6.7.10.123", "maya-2.6.7.10.123");
+            Parsed("PLC_maya-2.6.7.10_debug.123", FirmwareType.PLC, "PLC_maya-2.6.7.10_debug", "maya-2.6.7.10");
+            foreach (string other in new[] { "PFC", "LLC", "M4", "ESP32" }) Rejected(other + "_maya-2.6.7.10.simage");
             Parsed("PFC_release_V000B01D15.bin", FirmwareType.PFC, "PFC_release_V000B01D15", "V000B01D15");
             Parsed(@"C:\firmware\llc_hw_v12_debug.BIN", FirmwareType.LLC, "llc_hw_v12_debug", "v12");
             Parsed("/tmp/build/M4_V1.2.3.bin", FirmwareType.M4, "M4_V1.2.3", "V1");

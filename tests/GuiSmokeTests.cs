@@ -62,8 +62,8 @@ internal static class GuiSmokeTests
         {
             foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
             {
-                string first = Path.Combine(directory, type + "_V1_复制.bin");
-                string second = Path.Combine(directory, type + "_V2_粘贴.bin");
+                string first = Path.Combine(directory, type == "PLC" ? "PLC_maya-2.6.7.10.simage" : type + "_V1_复制.bin");
+                string second = Path.Combine(directory, type == "PLC" ? "PLC_maya-2.6.7.11.simage" : type + "_V2_粘贴.bin");
                 File.WriteAllBytes(first, new byte[] { 1, 2, 3 });
                 File.WriteAllBytes(second, new byte[] { 4, 5, 6 });
                 TextBox path = Find<TextBox>(form, "Path_" + type);
@@ -78,6 +78,8 @@ internal static class GuiSmokeTests
                 expectedText = "  \"" + second + "\"  "; expectedFiles = null;
                 Clipboard.SetText(expectedText);
                 PasteFirmware(path);
+                if (type == "PLC" && path.Text == second && Find<TextBox>(form, "Version_PLC").Text != "maya-2.6.7.11")
+                    throw new Exception("Pasting PLC .simage must retain its complete maya version");
                 if (path.Text != second)
                 {
                     if (!Clipboard.ContainsText() || Clipboard.GetText() != expectedText)
@@ -102,9 +104,20 @@ internal static class GuiSmokeTests
                 expectedFiles = new[] { first, second }; expectedText = null;
                 string beforeMultipleError = history.Text;
                 PasteFirmware(path);
-                if (path.Text != second || !history.Text.Substring(beforeMultipleError.Length).Contains("请复制一个 BIN 固件文件"))
+                string multipleMessage = type == "PLC" ? "请复制一个 PLC 固件文件" : "请复制一个 BIN 固件文件";
+                if (path.Text != second || !history.Text.Substring(beforeMultipleError.Length).Contains(multipleMessage))
                     throw new Exception("Pasting multiple files must report an error without replacing " + type);
                 Find<Button>(form, "Clear_" + type).PerformClick();
+                if (type == "PLC")
+                {
+                    Label hint = Find<Label>(form, "DragHint_PLC");
+                    if (!hint.Visible || SendDrag(hint, "OnDragEnter", new[] { first }).Effect != DragDropEffects.Copy)
+                        throw new Exception("PLC .simage must be accepted by the visible drop target");
+                    SendDrag(hint, "OnDragDrop", new[] { first });
+                    if (path.Text != first || Find<TextBox>(form, "Version_PLC").Text != "maya-2.6.7.10")
+                        throw new Exception("PLC .simage drop did not load its path and full version");
+                    Find<Button>(form, "Clear_PLC").PerformClick();
+                }
             }
             Console.WriteLine("PASS firmware clipboard: five types, copied file, quoted path and multiple-file protection");
         }
@@ -326,7 +339,7 @@ internal static class GuiSmokeTests
                     {
                         string input = Path.Combine(workDir, "M4 固件 文件.bin");
                         string output = Path.Combine(workDir, "联合 固件 包.bin");
-                        if (!form.Text.Contains("V0.0.7")) throw new Exception("Tool version must be independent from package format V1");
+                        if (!form.Text.Contains("V0.0.8")) throw new Exception("Tool version must be independent from package format V1");
                         if (form.Controls.Find("FtpToggle", true).Length != 0 || form.Controls.Find("FtpDialog", true).Length != 0)
                             throw new Exception("FTP must be inline without toggle or dialog");
                         if (form.Controls.Find("BrandHeader", true).Length != 0) throw new Exception("Redundant brand banner must not be present");
