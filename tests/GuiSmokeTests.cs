@@ -106,7 +106,15 @@ internal static class GuiSmokeTests
                 PasteFirmware(path);
                 string multipleMessage = type == "PLC" ? "请复制一个 PLC 固件文件" : "请复制一个 BIN 固件文件";
                 if (path.Text != second || !history.Text.Substring(beforeMultipleError.Length).Contains(multipleMessage))
-                    throw new Exception("Pasting multiple files must report an error without replacing " + type);
+                {
+                    System.Collections.Specialized.StringCollection actual = Clipboard.ContainsFileDropList()
+                        ? Clipboard.GetFileDropList() : new System.Collections.Specialized.StringCollection();
+                    bool clipboardMatches = actual.Count == 2 && actual[0] == first && actual[1] == second;
+                    throw new Exception("Pasting multiple files must report an error without replacing " + type +
+                        "; preserved=" + (path.Text == second) + ", errorRecorded=" +
+                        history.Text.Substring(beforeMultipleError.Length).Contains(multipleMessage) +
+                        ", clipboardMatches=" + clipboardMatches);
+                }
                 Find<Button>(form, "Clear_" + type).PerformClick();
                 if (type == "PLC")
                 {
@@ -309,10 +317,12 @@ internal static class GuiSmokeTests
         if (!hint.Visible || SendDrag(hint, "OnDragEnter", new[] { package }).Effect != DragDropEffects.Copy)
             throw new Exception("Empty upgrade file hint must accept a BIN drop");
         SendDrag(hint, "OnDragDrop", new[] { package }); Application.DoEvents();
+        WaitForStatus(Find<TextBox>(form, "UpgradePackageInfo"), "M4", 0);
         if (path.Text != package || hint.Visible || !Find<TextBox>(form, "UpgradePackageInfo").Text.Contains("M4"))
             throw new Exception("Dropping a valid package did not populate the upgrade page");
         string raw = Path.Combine(workDir, "different-file.bin"); File.WriteAllBytes(raw, new byte[] { 1, 2, 3 });
         SendDrag(path.Parent, "OnDragDrop", new[] { raw }); Application.DoEvents();
+        WaitForStatus(Find<TextBox>(form, "UpgradePackageInfo"), "无法识别", 0);
         if (path.Text != raw || !Find<TextBox>(form, "UpgradePackageInfo").Text.Contains("无法识别"))
             throw new Exception("Replacing the file did not report the unknown package format");
         Find<Button>(form, "PackPageTab").PerformClick(); Application.DoEvents();
@@ -339,7 +349,7 @@ internal static class GuiSmokeTests
                     {
                         string input = Path.Combine(workDir, "M4 固件 文件.bin");
                         string output = Path.Combine(workDir, "联合 固件 包.bin");
-                        if (!form.Text.Contains("V0.0.9")) throw new Exception("Tool version must be independent from package format V1");
+                        if (!form.Text.Contains("V0.0.10")) throw new Exception("Tool version must be independent from package format V1");
                         if (form.Controls.Find("FtpToggle", true).Length != 0 || form.Controls.Find("FtpDialog", true).Length != 0)
                             throw new Exception("FTP must be inline without toggle or dialog");
                         if (form.Controls.Find("BrandHeader", true).Length != 0) throw new Exception("Redundant brand banner must not be present");

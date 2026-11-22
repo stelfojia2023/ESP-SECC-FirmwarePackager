@@ -1,12 +1,16 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Net;
 using System.Text;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace SeccFirmwarePackager
 {
-    // UI and package selection only. The device and platform protocols are not connected.
+    // Local upgrade uses LUP1; the remote platform remains a separate placeholder.
     internal sealed class UpgradePage : TableLayoutPanel
     {
         private readonly TextBox packagePath = new TextBox();
@@ -17,9 +21,50 @@ namespace SeccFirmwarePackager
         private readonly Panel localSettings = new Panel();
         private readonly Panel remoteSettings = new Panel();
         private readonly Label status = new Label();
+        private readonly Label lastTaskLabel = new Label();
+        private readonly Button start = new RaisedButton();
+        private readonly Button continueButton = new RaisedButton();
+        private readonly Button browse = new RaisedButton();
+        private readonly Button timeoutSettings = new RaisedButton();
+        private readonly TextBox localIp = NewInput("LocalDeviceIp", "填写设备 IP 地址", false);
+        private readonly TextBox localPort = NewInput("LocalDevicePort", "填写端口", false);
         private readonly ToolTip tooltips = new ToolTip();
         private readonly TableLayoutPanel packageBody;
         private readonly TableLayoutPanel settingsBody;
+        private readonly TableLayoutPanel resultBody;
+        private bool remote;
+        private bool candidateValid;
+        private int selectionRevision;
+        private bool busy;
+        private bool transferActive;
+        private string pendingGeneratedPath;
+        private string localStatusText = "准备本地升级。";
+        private bool localStatusError;
+        private string lastObservedStatus;
+        private int connectTimeoutMs = 5000;
+        private int blockTimeoutMs = 10000;
+        private int operationTimeoutMs = 120000;
+        private int waitTimeoutMs = 600000;
+        private ObservedTask lastTask;
+        private bool canResume;
+        private readonly object connectionGate = new object();
+        private readonly CancellationTokenSource shutdownCancellation = new CancellationTokenSource();
+        private Lup1Connection activeConnection;
+        private volatile bool shuttingDown;
+        public event Action<string, bool> ResultReported;
+
+        internal bool TransferActive { get { return transferActive; } }
+
+        private sealed class ObservedTask
+        {
+            public IPAddress Address;
+            public int Port;
+            public LocalUpgradeSnapshot Snapshot;
+            public byte[] Task;
+            public IList<LupVersion> Before;
+            public IList<LupVersion> Latest;
+            public int CandidateRevision;
+        }
 
         public UpgradePage()
         {
@@ -43,6 +88,7 @@ namespace SeccFirmwarePackager
             packagePath.DragEnter += PackageDragEnter; packagePath.DragDrop += PackageDragDrop;
             packagePath.KeyDown += delegate(object sender, KeyEventArgs e)
             {
+                if (busy) return;
                 if (!e.Control || e.KeyCode != Keys.V) return;
                 e.SuppressKeyPress = true;
                 try { SelectPackage(Clipboard.GetText().Trim().Trim('"')); }
@@ -50,6 +96,9 @@ namespace SeccFirmwarePackager
             };
             packagePath.TextChanged += delegate
             {
+                selectionRevision++;
+                candidateValid = false;
+                UpdateStart();
                 dragHint.Visible = String.IsNullOrWhiteSpace(packagePath.Text);
                 tooltips.SetToolTip(packagePath, packagePath.Text);
             };
@@ -63,7 +112,8 @@ namespace SeccFirmwarePackager
             dragHint.DragEnter += PackageDragEnter; dragHint.DragDrop += PackageDragDrop;
             pathField.Controls.Add(dragHint); dragHint.BringToFront();
 
-            Button browse = new RaisedButton { Name = "UpgradeBrowsePackage", Text = "选择升级 BIN", AccessibleName = "选择升级 BIN", Dock = DockStyle.Fill };
+            browse.Name = "UpgradeBrowsePackage"; browse.Text = "选择升级 BIN";
+            browse.AccessibleName = "选择升级 BIN"; browse.Dock = DockStyle.Fill;
             Style(browse, false); browse.BackColor = UiColors.ButtonIcon;
             ((RaisedButton)browse).IconOnly = true; ((RaisedButton)browse).Glyph = ButtonGlyph.Folder;
             tooltips.SetToolTip(browse, "选择升级 BIN");
@@ -78,8 +128,8 @@ namespace SeccFirmwarePackager
             pathLine.Controls.Add(pathField, 0, 0); pathLine.Controls.Add(browse, 1, 0);
             packageBody.Controls.Add(pathLine, 0, 1);
             packageInfo.Name = "UpgradePackageInfo"; packageInfo.Multiline = true; packageInfo.ReadOnly = true;
-            packageInfo.Dock = DockStyle.Fill; packageInfo.BorderStyle = BorderStyle.None; packageInfo.WordWrap = false;
-            packageInfo.ScrollBars = ScrollBars.None; packageInfo.BackColor = UiColors.Card; packageInfo.ForeColor = UiColors.Muted;
+            packageInfo.Dock = DockStyle.Fill; packageInfo.BorderStyle = BorderStyle.None; packageInfo.WordWrap = true;
+            packageInfo.ScrollBars = ScrollBars.Vertical; packageInfo.BackColor = UiColors.Card; packageInfo.ForeColor = UiColors.Muted;
             packageInfo.AccessibleName = "升级文件内容";
             packageBody.Controls.Add(packageInfo, 0, 2);
             packageCard.Controls.Add(packageBody); Controls.Add(packageCard, 0, 0);
@@ -105,17 +155,26 @@ namespace SeccFirmwarePackager
             settingsCard.Controls.Add(settingsBody); Controls.Add(settingsCard, 0, 1);
 
             SectionCard resultCard = Card("UpgradeResultCard");
-            TableLayoutPanel result = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty, BackColor = Color.Transparent };
-            result.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); result.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 186));
-            result.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            resultBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = Padding.Empty, BackColor = Color.Transparent };
+            resultBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); resultBody.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 186));
+            resultBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); resultBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
             status.Name = "UpgradeStatus"; status.Dock = DockStyle.Fill; status.TextAlign = ContentAlignment.MiddleLeft;
             status.ForeColor = UiColors.Muted; status.AutoEllipsis = true; status.AccessibleName = "设备升级状态";
-            result.Controls.Add(status, 0, 0);
-            Button start = new RaisedButton { Name = "StartUpgradeButton", Text = "开始升级", Enabled = false, Size = new Size(180, 40),
-                Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top, Margin = new Padding(3, 2, 3, 3) };
-            Style(start, true); tooltips.SetToolTip(start, "设备通信协议尚未接入");
-            result.Controls.Add(start, 1, 0);
-            resultCard.Controls.Add(result); Controls.Add(resultCard, 0, 2);
+            resultBody.Controls.Add(status, 0, 0);
+            start.Name = "StartUpgradeButton"; start.Text = "开始升级"; start.Enabled = false; start.Size = new Size(180, 40);
+            start.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top; start.Margin = new Padding(3, 2, 3, 3);
+            Style(start, true); start.Click += StartClicked;
+            resultBody.Controls.Add(start, 1, 0);
+            lastTaskLabel.Name = "UpgradeLastTask"; lastTaskLabel.Dock = DockStyle.Fill;
+            lastTaskLabel.ForeColor = UiColors.Muted; lastTaskLabel.AutoEllipsis = true;
+            lastTaskLabel.TextAlign = ContentAlignment.MiddleLeft;
+            resultBody.Controls.Add(lastTaskLabel, 0, 1);
+            continueButton.Name = "ContinueUpgradeButton"; continueButton.Text = "继续等待";
+            continueButton.Size = new Size(180, 40); continueButton.Margin = new Padding(3, 2, 3, 3);
+            continueButton.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
+            Style(continueButton, false); continueButton.Click += ContinueClicked;
+            resultBody.Controls.Add(continueButton, 1, 1);
+            resultCard.Controls.Add(resultBody); Controls.Add(resultCard, 0, 2);
             SetMode(false);
         }
 
@@ -140,7 +199,7 @@ namespace SeccFirmwarePackager
             return new Label { Text = text, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiColors.Muted, Margin = Padding.Empty };
         }
 
-        private static void Style(Button button, bool selected)
+        internal static void Style(Button button, bool selected)
         {
             button.FlatStyle = FlatStyle.Flat; button.FlatAppearance.BorderSize = 0; button.UseVisualStyleBackColor = false;
             button.Font = new Font("Microsoft YaHei UI", 9F, selected ? FontStyle.Bold : FontStyle.Regular);
@@ -161,16 +220,32 @@ namespace SeccFirmwarePackager
             return input;
         }
 
-        private static TableLayoutPanel BuildLocalSettings()
+        private TableLayoutPanel BuildLocalSettings()
         {
-            TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = Padding.Empty, BackColor = Color.Transparent };
+            TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 1, Margin = Padding.Empty, BackColor = Color.Transparent };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72)); layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 62)); layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 124));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+            localIp.Text = "192.168.198.50";
+            localPort.Text = "8090";
             layout.Controls.Add(FieldLabel("设备 IP"), 0, 0);
-            layout.Controls.Add(new SoftField(NewInput("LocalDeviceIp", "填写设备 IP 地址", false), false) { Dock = DockStyle.Fill }, 1, 0);
+            layout.Controls.Add(new SoftField(localIp, false) { Dock = DockStyle.Fill }, 1, 0);
             layout.Controls.Add(FieldLabel("端口"), 2, 0);
-            layout.Controls.Add(new SoftField(NewInput("LocalDevicePort", "待确定", false), false) { Dock = DockStyle.Fill }, 3, 0);
+            layout.Controls.Add(new SoftField(localPort, false) { Dock = DockStyle.Fill }, 3, 0);
+            timeoutSettings.Name = "UpgradeTimeoutSettings"; timeoutSettings.Text = "超时设置";
+            timeoutSettings.Dock = DockStyle.Fill; Style(timeoutSettings, false);
+            timeoutSettings.Click += delegate
+            {
+                if (busy) return;
+                using (UpgradeTimeoutDialog dialog = new UpgradeTimeoutDialog(connectTimeoutMs, blockTimeoutMs, operationTimeoutMs, waitTimeoutMs))
+                {
+                    if (dialog.ShowDialog(FindForm()) != DialogResult.OK) return;
+                    connectTimeoutMs = dialog.ConnectMs; blockTimeoutMs = dialog.BlockMs;
+                    operationTimeoutMs = dialog.OperationMs; waitTimeoutMs = dialog.WaitMs;
+                }
+            };
+            layout.Controls.Add(timeoutSettings, 4, 0);
             return layout;
         }
 
@@ -195,13 +270,477 @@ namespace SeccFirmwarePackager
 
         private void SetMode(bool remote)
         {
+            this.remote = remote;
             localSettings.Visible = !remote; remoteSettings.Visible = remote;
             localMode.BackColor = remote ? UiColors.ButtonSecondary : UiColors.ButtonPrimary;
             remoteMode.BackColor = remote ? UiColors.ButtonPrimary : UiColors.ButtonSecondary;
             settingsBody.RowStyles[1].Height = remote ? 96 : 32;
             RowStyles[1].Height = remote ? 160 : 96;
-            status.Text = remote ? "运营平台升级接口尚未接入。" : "本地网口升级协议尚未接入。";
+            status.Text = remote ? "运营平台升级接口尚未接入。" : localStatusText;
+            status.ForeColor = !remote && localStatusError ? UiColors.Error : UiColors.Muted;
+            tooltips.SetToolTip(status, status.Text);
+            UpdateStart();
             PerformLayout();
+        }
+
+        private void UpdateStart()
+        {
+            start.Enabled = !remote && candidateValid && !busy;
+            UpdateResumeLayout();
+        }
+
+        private void UpdateResumeLayout()
+        {
+            if (resultBody == null) return;
+            bool show = !remote && lastTask != null &&
+                (canResume || selectionRevision != lastTask.CandidateRevision);
+            lastTaskLabel.Visible = show;
+            continueButton.Visible = show && canResume;
+            continueButton.Enabled = show && canResume && !busy;
+            resultBody.RowStyles[1].Height = show ? 48 : 0;
+            RowStyles[2].Height = show ? 120 : 72;
+            if (show)
+            {
+                lastTaskLabel.Text = (canResume ? "可继续等待：" : "最近任务：") + Path.GetFileName(lastTask.Snapshot.Path);
+                if (selectionRevision != lastTask.CandidateRevision &&
+                    String.Equals(packagePath.Text, lastTask.Snapshot.Path, StringComparison.OrdinalIgnoreCase))
+                    lastTaskLabel.Text += "（路径已用于新包）";
+                StringBuilder details = new StringBuilder("任务包：" + lastTask.Snapshot.Path);
+                for (int i = 0; i < lastTask.Snapshot.Report.Entries.Count; i++)
+                {
+                    FirmwareEntry entry = lastTask.Snapshot.Report.Entries[i];
+                    details.Append("\r\n").Append(entry.Type).Append("  目标：").Append(entry.Version);
+                    if (lastTask.Before != null) details.Append("  升级前：").Append(VersionText(lastTask.Before[i]));
+                    if (lastTask.Latest != null) details.Append("  当前：").Append(VersionText(lastTask.Latest[i]));
+                }
+                tooltips.SetToolTip(lastTaskLabel, details.ToString());
+            }
+        }
+
+        private void PostToUi(Action action)
+        {
+            if (shuttingDown || IsDisposed || Disposing || !IsHandleCreated) return;
+            try { BeginInvoke(action); }
+            catch (InvalidOperationException) { }
+        }
+
+        private Lup1Connection Connect(IPAddress address, int port, int timeoutMs)
+        {
+            if (shuttingDown) throw new OperationCanceledException("工具已关闭。");
+            Lup1Connection connection = new Lup1Connection(address, port, timeoutMs, shutdownCancellation.Token);
+            lock (connectionGate)
+            {
+                if (shuttingDown)
+                {
+                    connection.Dispose();
+                    throw new OperationCanceledException("工具已关闭。");
+                }
+                activeConnection = connection;
+            }
+            return connection;
+        }
+
+        private void CloseConnection(Lup1Connection connection)
+        {
+            if (connection == null) return;
+            lock (connectionGate)
+            {
+                if (Object.ReferenceEquals(activeConnection, connection)) activeConnection = null;
+            }
+            connection.Dispose();
+        }
+
+        internal void ShutdownClient()
+        {
+            Lup1Connection connection;
+            lock (connectionGate)
+            {
+                shuttingDown = true;
+                connection = activeConnection;
+                activeConnection = null;
+            }
+            shutdownCancellation.Cancel();
+            if (connection != null) connection.Dispose();
+        }
+
+        private void Finish(string message, bool error)
+        {
+            busy = false;
+            transferActive = false;
+            packagePath.Enabled = true;
+            browse.Enabled = true;
+            localIp.Enabled = true;
+            localPort.Enabled = true;
+            timeoutSettings.Enabled = true;
+            SetLocalStatus(message, error);
+            ReportResult(message, error);
+            if (!String.IsNullOrEmpty(pendingGeneratedPath))
+            {
+                string next = pendingGeneratedPath;
+                pendingGeneratedPath = null;
+                SelectPackage(next);
+            }
+            UpdateStart();
+        }
+
+        private void SetLocalStatus(string message, bool error)
+        {
+            localStatusText = message;
+            localStatusError = error;
+            if (!remote)
+            {
+                status.ForeColor = error ? UiColors.Error : UiColors.Muted;
+                status.Text = message;
+                tooltips.SetToolTip(status, message);
+            }
+        }
+
+        private void ReportResult(string message, bool error)
+        {
+            Action<string, bool> handler = ResultReported;
+            if (handler != null) handler(message, error);
+        }
+
+        private static string VersionText(LupVersion version)
+        {
+            return version.Status == 0 ? version.Value :
+                version.Status == 1 ? "未就绪" : version.Status == 2 ? "不支持查询" : "不可用";
+        }
+
+        private void DisplayVersions(PackageReport report, IList<LupVersion> versions, IList<LupVersion> before)
+        {
+            StringBuilder text = new StringBuilder();
+            for (int i = 0; i < report.Entries.Count; i++)
+            {
+                if (i > 0) text.Append("\r\n");
+                FirmwareEntry entry = report.Entries[i];
+                LupVersion version = versions[i];
+                text.Append(entry.Type).Append("  目标：").Append(entry.Version);
+                if (before != null) text.Append("  升级前：").Append(VersionText(before[i]));
+                text.Append("  当前：").Append(VersionText(version));
+            }
+            packageInfo.ForeColor = UiColors.Ink;
+            SetInfo(text.ToString(), report.Entries.Count * 2);
+        }
+
+        private static List<LupVersion> ReadVersions(Lup1Connection connection, PackageReport report, int timeoutMs)
+        {
+            try { return connection.QueryVersions(report.Entries, timeoutMs); }
+            catch (LupDeviceException ex)
+            {
+                if (ex.Code != 2) throw;
+                List<LupVersion> versions = new List<LupVersion>();
+                foreach (FirmwareEntry entry in report.Entries)
+                    versions.Add(new LupVersion { Type = entry.Type, Status = 2 });
+                return versions;
+            }
+        }
+
+        private static int RemainingQueryTimeout(Stopwatch wait, int waitMs, int queryTimeoutMs)
+        {
+            long remaining = waitMs - wait.ElapsedMilliseconds;
+            if (remaining <= 0) throw new TimeoutException("等待超时。");
+            return (int)Math.Min(queryTimeoutMs, remaining);
+        }
+
+        private void ObserveTask(ObservedTask observed, Lup1Connection initialConnection,
+            int initialState, int queryTimeoutMs, int waitMs)
+        {
+            Stopwatch wait = Stopwatch.StartNew();
+            Lup1Connection connection = initialConnection;
+            LocalUpgradeSnapshot snapshot = observed.Snapshot;
+            try
+            {
+                while (wait.ElapsedMilliseconds < waitMs)
+                {
+                    if (shuttingDown) return;
+                    try
+                    {
+                        if (connection == null)
+                            connection = Connect(observed.Address, observed.Port, RemainingQueryTimeout(wait, waitMs, queryTimeoutMs));
+                        byte state;
+                        if (initialState >= 0) { state = (byte)initialState; initialState = -1; }
+                        else
+                        {
+                            try { state = connection.QueryTask(observed.Task, RemainingQueryTimeout(wait, waitMs, queryTimeoutMs)); }
+                            catch (LupDeviceException ex)
+                            {
+                                if (ex.Code != 11) throw;
+                                state = 255;
+                            }
+                        }
+                        if (state == 4)
+                        {
+                            CloseConnection(connection);
+                            connection = null;
+                            PostToUi(delegate
+                            {
+                                lastTask = observed; canResume = false;
+                                Finish("设备报告本次任务失败。", true);
+                            });
+                            return;
+                        }
+                        List<LupVersion> versions = ReadVersions(connection, snapshot.Report,
+                            RemainingQueryTimeout(wait, waitMs, queryTimeoutMs));
+                        bool matched = true, unsupported = false;
+                        for (int i = 0; i < versions.Count; i++)
+                        {
+                            if (versions[i].Status == 2) unsupported = true;
+                            if (versions[i].Status != 0 ||
+                                !String.Equals(versions[i].Value, snapshot.Report.Entries[i].Version, StringComparison.Ordinal))
+                                matched = false;
+                        }
+                        string phase = state == 0 ? "设备接收中" : state == 1 ? "设备等待安装" :
+                            state == 2 ? "设备安装中" : state == 3 ? "设备任务已结束" : "设备任务状态未知";
+                        string result = matched ? "版本核对通过" : unsupported ? "部分目标不支持版本查询" : "版本待核对";
+                        string description = phase + "，" + result + "。" +
+                            (matched ? "版本一致不能证明本次重新写入或由本任务导致。" : "");
+                        bool unknownMatched = state == 255 && matched;
+                        bool complete = matched && (state == 3 || unknownMatched);
+                        if (complete)
+                        {
+                            CloseConnection(connection);
+                            connection = null;
+                        }
+                        PostToUi(delegate
+                        {
+                            observed.Latest = versions;
+                            if (selectionRevision == observed.CandidateRevision)
+                                DisplayVersions(snapshot.Report, versions, observed.Before);
+                            UpdateResumeLayout();
+                            SetLocalStatus(description, false);
+                            if (lastObservedStatus != description)
+                            {
+                                lastObservedStatus = description;
+                                ReportResult(description, false);
+                            }
+                            if (complete)
+                            {
+                                lastTask = observed; canResume = unknownMatched;
+                                Finish(unknownMatched ?
+                                    "设备任务状态未知，版本核对通过；本次任务结果未确认。" :
+                                    "设备任务已结束，版本核对通过；版本一致不能证明本次重新写入。", false);
+                            }
+                        });
+                        if (complete) return;
+                    }
+                    catch (LupDeviceException) { throw; }
+                    catch (Exception ex)
+                    {
+                        if (shuttingDown) return;
+                        if (!(ex is IOException || ex is TimeoutException || ex is System.Net.Sockets.SocketException)) throw;
+                        CloseConnection(connection);
+                        connection = null;
+                        if (wait.ElapsedMilliseconds >= waitMs) break;
+                        string message = "设备暂不可达或应答无效，等待重新查询：" + ex.Message;
+                        PostToUi(delegate
+                        {
+                            SetLocalStatus(message, true);
+                            if (lastObservedStatus != message) { lastObservedStatus = message; ReportResult(message, true); }
+                        });
+                    }
+                    int remaining = (int)Math.Max(0, waitMs - wait.ElapsedMilliseconds);
+                    if (remaining == 0) break;
+                    Thread.Sleep(Math.Min(5000, remaining));
+                }
+                CloseConnection(connection);
+                connection = null;
+                PostToUi(delegate
+                {
+                    lastTask = observed; canResume = true;
+                    Finish("等待超时；设备可能仍在等待或执行安装。", false);
+                });
+            }
+            finally { CloseConnection(connection); }
+        }
+
+        private void ReportAccepted()
+        {
+            PostToUi(delegate
+            {
+                transferActive = false;
+                SetLocalStatus("设备已接收并校验，安装状态尚未确认。", false);
+                ReportResult("设备已接收并校验，安装状态尚未确认。", false);
+            });
+        }
+
+        private void ContinueClicked(object sender, EventArgs e)
+        {
+            if (busy || remote || !canResume || lastTask == null) return;
+            ObservedTask observed = lastTask;
+            int queryTimeout = connectTimeoutMs, waitTimeout = waitTimeoutMs;
+            busy = true;
+            packagePath.Enabled = false; browse.Enabled = false;
+            localIp.Enabled = false; localPort.Enabled = false; timeoutSettings.Enabled = false;
+            lastObservedStatus = null;
+            SetLocalStatus("继续等待：" + Path.GetFileName(observed.Snapshot.Path), false);
+            ReportResult("继续等待：" + observed.Snapshot.Path, false);
+            UpdateStart();
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                try
+                {
+                    ObserveTask(observed, null, -1, queryTimeout, waitTimeout);
+                }
+                catch (Exception ex) { PostToUi(delegate { Finish(ex.Message, true); }); }
+            });
+        }
+
+        private void StartClicked(object sender, EventArgs e)
+        {
+            if (busy || remote || !candidateValid) return;
+            IPAddress address;
+            int port;
+            if (!IPAddress.TryParse(localIp.Text.Trim(), out address) ||
+                !Int32.TryParse(localPort.Text.Trim(), out port) || port < 1 || port > 65535)
+            {
+                Finish("请输入有效的设备 IP 和端口。", true);
+                return;
+            }
+            string path = packagePath.Text;
+            int taskCandidateRevision = selectionRevision;
+            int queryTimeout = connectTimeoutMs, blockTimeout = blockTimeoutMs;
+            int operationTimeout = operationTimeoutMs, waitTimeout = waitTimeoutMs;
+            busy = true;
+            packagePath.Enabled = false;
+            browse.Enabled = false;
+            localIp.Enabled = false;
+            localPort.Enabled = false;
+            timeoutSettings.Enabled = false;
+            UpdateStart();
+            SetLocalStatus("正在校验升级包。", false);
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                LocalUpgradeSnapshot snapshot;
+                try { snapshot = LocalUpgradeSnapshot.Load(path); }
+                catch (Exception ex)
+                {
+                    PostToUi(delegate { SetError("联合包校验失败：" + ex.Message, false); Finish("联合包校验失败：" + ex.Message, true); });
+                    return;
+                }
+                try
+                {
+                    bool packageApproved = false;
+                    if (IsDisposed || !IsHandleCreated || shuttingDown) return;
+                    Invoke(new Action(delegate
+                    {
+                        StringBuilder details = new StringBuilder();
+                        foreach (FirmwareEntry entry in snapshot.Report.Entries)
+                        {
+                            details.AppendLine(entry.Type + "  目标：" + entry.Version);
+                            if (entry.Type == FirmwareType.PLC &&
+                                (!entry.Version.StartsWith("maya-", StringComparison.Ordinal) ||
+                                 Encoding.UTF8.GetByteCount(entry.Version) >= 15))
+                                details.AppendLine("当前设备对 PLC 版本格式或查询长度有限制，请确认是否继续。");
+                        }
+                        string message = "将发送以下联合包：\r\n" + snapshot.Path + "\r\n" + details +
+                            "\r\n设备已有等待安装的旧包可能被新任务替换，即使新传输失败也可能不再安装。" +
+                            "\r\n云端下载可能使设备暂时无响应；超时后请稍后人工重试。确定继续？";
+                        packageApproved = MessageBox.Show(FindForm(), message, "确认本地升级", MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+                        if (!packageApproved) { Finish("已取消本地升级。", false); return; }
+                        transferActive = true;
+                    }));
+                    if (!packageApproved || shuttingDown) return;
+                    PostToUi(delegate { SetLocalStatus("正在查询设备状态和升级前版本。", false); });
+                    using (Lup1Connection connection = Connect(address, port, queryTimeout))
+                    {
+                        byte deviceStatus = connection.QueryStatus(queryTimeout);
+                        if (deviceStatus == 1) throw new InvalidDataException("设备已插枪，请先拔枪。");
+                        if (deviceStatus == 2) throw new InvalidDataException("设备状态未知，不能发送升级包。");
+                        List<LupVersion> before = ReadVersions(connection, snapshot.Report, queryTimeout);
+                        bool approved = false;
+                        if (IsDisposed || !IsHandleCreated) return;
+                        Invoke(new Action(delegate
+                        {
+                            DisplayVersions(snapshot.Report, before, null);
+                            StringBuilder details = new StringBuilder();
+                            for (int i = 0; i < snapshot.Report.Entries.Count; i++)
+                            {
+                                FirmwareEntry entry = snapshot.Report.Entries[i];
+                                details.AppendLine(entry.Type + "  目标：" + entry.Version + "  升级前：" + VersionText(before[i]));
+                            }
+                            string message = "设备升级前版本：\r\n" + details +
+                                "\r\n升级前版本相同或未知时，版本一致不能证明本次重新写入。确定发送？";
+                            approved = MessageBox.Show(FindForm(), message, "确认设备版本", MessageBoxButtons.YesNo,
+                                MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+                        }));
+                        if (shuttingDown) return;
+                        if (!approved)
+                        {
+                            CloseConnection(connection);
+                            PostToUi(delegate { Finish("已取消本地升级。", false); });
+                            return;
+                        }
+                        PostToUi(delegate { ReportResult("开始本地升级：" + snapshot.Path, false); });
+                        byte[] task;
+                        try { task = connection.BeginPackage(snapshot.Length, operationTimeout); }
+                        catch (LupDeviceException) { throw; }
+                        catch (Exception ex) { throw new IOException("开始应答未确认，无法查询本次任务：" + ex.Message, ex); }
+                        PostToUi(delegate
+                        {
+                            lastTask = null;
+                            canResume = false;
+                            lastObservedStatus = null;
+                            UpdateResumeLayout();
+                        });
+                        ObservedTask observed = new ObservedTask
+                        {
+                            Address = address, Port = port, Snapshot = snapshot, Task = task,
+                            Before = before, CandidateRevision = taskCandidateRevision
+                        };
+                        for (int offset = 0; offset < snapshot.Length;)
+                        {
+                            int length = Math.Min(4096, snapshot.Length - offset);
+                            connection.SendBlock(task, offset, snapshot.ReadBlock(offset, length), blockTimeout);
+                            offset += length;
+                            int confirmed = offset;
+                            PostToUi(delegate
+                            {
+                                SetLocalStatus(String.Format("已确认 {0:N0} / {1:N0} 字节（{2}%）",
+                                    confirmed, snapshot.Length, confirmed * 100 / snapshot.Length), false);
+                            });
+                        }
+                        try { connection.EndPackage(task, operationTimeout); }
+                        catch (LupDeviceException) { throw; }
+                        catch (InvalidDataException) { throw; }
+                        catch (Exception ex)
+                        {
+                            CloseConnection(connection);
+                            if (shuttingDown) return;
+                            Lup1Connection recovery = null;
+                            byte recovered;
+                            try
+                            {
+                                recovery = Connect(address, port, queryTimeout);
+                                recovered = recovery.QueryTask(task, queryTimeout);
+                            }
+                            catch (Exception recoveryError)
+                            {
+                                CloseConnection(recovery);
+                                throw new IOException("结束应答未确认：" + recoveryError.Message, ex);
+                            }
+                            using (recovery)
+                            {
+                                if (recovered == 4)
+                                {
+                                    CloseConnection(recovery);
+                                    PostToUi(delegate { Finish("设备报告本次任务失败。", true); });
+                                    return;
+                                }
+                                if (recovered == 0)
+                                    throw new IOException("结束应答未确认：设备仍在接收，无法确认校验结果。", ex);
+                                ReportAccepted();
+                                ObserveTask(observed, recovery, recovered, queryTimeout, waitTimeout);
+                            }
+                            return;
+                        }
+                        ReportAccepted();
+                        ObserveTask(observed, connection, -1, queryTimeout, waitTimeout);
+                    }
+                }
+                catch (Exception ex) { PostToUi(delegate { Finish(ex.Message, true); }); }
+            });
         }
 
         private static string[] DroppedFiles(DragEventArgs e)
@@ -223,6 +762,7 @@ namespace SeccFirmwarePackager
 
         private void PackageDragDrop(object sender, DragEventArgs e)
         {
+            if (busy) return;
             string[] files = DroppedFiles(e);
             if (files == null || files.Length != 1) { SetError("请选择一个 BIN 文件。"); return; }
             SelectPackage(files[0]);
@@ -230,8 +770,17 @@ namespace SeccFirmwarePackager
 
         private void SetError(string text)
         {
+            SetError(text, true);
+        }
+
+        private void SetError(string text, bool report)
+        {
+            selectionRevision++;
+            candidateValid = false;
+            UpdateStart();
             packageInfo.ForeColor = UiColors.Error;
             SetInfo(text, 1);
+            if (report) ReportResult("升级文件：" + text, true);
         }
 
         private void SetInfo(string text, int lines)
@@ -254,30 +803,65 @@ namespace SeccFirmwarePackager
             }
             packageInfo.ForeColor = UiColors.Ink;
             SetInfo(info.ToString(), report.Entries.Count);
+            candidateValid = true;
+            UpdateStart();
         }
 
         internal void UseGeneratedPackage(string path, PackageReport report)
         {
+            if (busy)
+            {
+                pendingGeneratedPath = path;
+                return;
+            }
+            selectionRevision++;
             packagePath.Text = path;
             DisplayReport(report);
         }
 
         private void SelectPackage(string path)
         {
+            selectionRevision++;
+            candidateValid = false;
+            UpdateStart();
             try
             {
                 if (!IsBin(path)) { SetError("请选择一个存在的 BIN 文件。"); return; }
                 string fullPath = Path.GetFullPath(path);
                 packagePath.Text = fullPath;
-                try { DisplayReport(Packager.VerifyFile(fullPath)); }
-                catch (InvalidDataException) { SetError("已选择 BIN，无法识别或校验为本工具的联合包。"); }
+                int revision = ++selectionRevision;
+                packageInfo.ForeColor = UiColors.Muted;
+                SetInfo("正在校验联合包。", 1);
+                ThreadPool.QueueUserWorkItem(delegate
+                {
+                    try
+                    {
+                        PackageReport report = Packager.VerifyFile(fullPath);
+                        PostToUi(delegate
+                        {
+                            if (revision == selectionRevision)
+                            {
+                                DisplayReport(report);
+                                ReportResult("已选择升级文件：" + fullPath, false);
+                            }
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        string message = "已选择 BIN，无法识别或校验为本工具的联合包：" + ex.Message;
+                        PostToUi(delegate
+                        {
+                            if (revision == selectionRevision) SetError(message);
+                        });
+                    }
+                });
             }
-            catch (Exception) { SetError("无法读取所选文件。"); }
+            catch (Exception ex) { SetError("无法读取所选文件：" + ex.Message); }
         }
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) tooltips.Dispose();
+            if (disposing) { ShutdownClient(); tooltips.Dispose(); }
             base.Dispose(disposing);
         }
     }

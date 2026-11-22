@@ -134,6 +134,16 @@ internal static class UiContractTests
         return null;
     }
     private static Control Find(Control root, string name) { return FindTree(root, name); }
+    private static void WaitFor(Func<bool> condition, string message)
+    {
+        DateTime until = DateTime.UtcNow.AddSeconds(10);
+        while (!condition() && DateTime.UtcNow < until)
+        {
+            Application.DoEvents();
+            System.Threading.Thread.Sleep(10);
+        }
+        Assert(condition(), message);
+    }
     private static void CheckHelpLayout(Form form)
     {
         Control help = Find(form, "HelpButton");
@@ -534,10 +544,12 @@ internal static class UiContractTests
         Assert(card.Top >= nav.Bottom && card.Top - nav.Bottom <= 12, "upgrade content sits close to the navigation");
         Assert(form.Width <= 1000 && form.Height <= 560, "upgrade page uses a compact default window");
         Assert(Find(form, "LocalUpgradeSettings").Visible && !Find(form, "RemoteUpgradeSettings").Visible, "local settings selected initially");
-        Assert(!Find(form, "StartUpgradeButton").Enabled && Find(form, "UpgradeStatus").Text.Contains("尚未接入"), "unfinished protocol is explicit and disabled");
+        Assert(Find(form, "StartUpgradeButton").Enabled && Find(form, "UpgradeStatus").Text.Contains("准备本地升级"),
+            "a valid package enables the local upgrade action");
         Assert(file.ReadOnly && file.AllowDrop && Find(form, "UpgradePackageHint").AllowDrop, "upgrade BIN supports safe drag and selection");
         TextBox localIp = (TextBox)Find(form, "LocalDeviceIp");
         TextBox localPort = (TextBox)Find(form, "LocalDevicePort");
+        Assert(localIp.Text == "192.168.198.50" && localPort.Text == "8090", "local device defaults are populated");
         localIp.Text = "192.0.2.10"; localPort.Text = "12345";
         ((Button)Find(form, "RemoteUpgradeMode")).PerformClick(); Application.DoEvents();
         Assert(Find(form, "RemoteUpgradeSettings").Visible && !Find(form, "LocalUpgradeSettings").Visible, "remote settings replace local settings");
@@ -558,16 +570,20 @@ internal static class UiContractTests
         string alternate = Path.Combine(work, "alternate-upgrade.bin");
         File.Copy(package, alternate, true);
         byte[] before = File.ReadAllBytes(alternate);
-        select.Invoke(page, new object[] { alternate }); Application.DoEvents();
+        select.Invoke(page, new object[] { alternate });
+        WaitFor(delegate { return info.Text.Contains("V000B01D15"); }, "alternate package validation completes");
         Assert(file.Text == alternate && info.Text.Contains("M4") && info.Text.Contains("V000B01D15"), "manual selection replaces generated package");
         Assert(Convert.ToBase64String(File.ReadAllBytes(alternate)) == Convert.ToBase64String(before), "selection does not modify or upload the package");
         string other = Path.Combine(work, "ordinary.txt");
         select.Invoke(page, new object[] { other }); Application.DoEvents();
         Assert(file.Text == alternate && info.Text.Contains("BIN"), "non-BIN selection keeps previous file");
         string unknown = Path.Combine(work, "unknown.bin"); File.WriteAllBytes(unknown, new byte[] { 1, 2, 3 });
-        select.Invoke(page, new object[] { unknown }); Application.DoEvents();
+        select.Invoke(page, new object[] { unknown });
+        WaitFor(delegate { return info.Text.Contains("无法识别"); }, "invalid package validation completes");
         Assert(file.Text == unknown && info.Text.Contains("无法识别"), "unknown BIN can be selected without claiming validity");
-        select.Invoke(page, new object[] { package }); Application.DoEvents();
+        Assert(info.Text.Contains("不足 4 KiB"), "truncated upgrade bundle exposes the validation reason");
+        select.Invoke(page, new object[] { package });
+        WaitFor(delegate { return info.Text.Contains("M4"); }, "valid package validation completes");
         Assert(file.Text == package && info.Text.Contains("M4"), "valid package can be selected again");
 
         foreach (string name in new[] { "PackPageTab", "UpgradePageTab", "LocalUpgradeMode", "RemoteUpgradeMode", "StartUpgradeButton" })
@@ -651,8 +667,8 @@ internal static class UiContractTests
             Environment.SetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR", Path.Combine(Path.GetTempPath(), "secc-ui-contract-" + Guid.NewGuid().ToString("N")));
             Application.EnableVisualStyles();
             Assembly app = Assembly.LoadFrom(Path.GetFullPath(args[0]));
-            Assert(app.GetName().Version.ToString() == "0.0.9.0" &&
-                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.9.0",
+            Assert(app.GetName().Version.ToString() == "0.0.10.0" &&
+                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.10.0",
                 "assembly and file version match release");
             foreach (string sound in new[] { "click", "success", "failure" })
                 using (Stream stream = app.GetManifestResourceStream("Sounds." + sound + ".wav"))
@@ -664,7 +680,7 @@ internal static class UiContractTests
                 Assert(Find(form, "FtpUser").Text == "", "FTP user defaults empty");
                 Assert(Find(form, "FtpPassword").Text == "" &&
                     ((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "empty FTP password is masked");
-                Assert(form.Text.Contains("V0.0.9"), "tool version separated from format");
+                Assert(form.Text.Contains("V0.0.10"), "tool version separated from format");
                 MethodInfo applyAddress = form.GetType().GetMethod("ApplyFtpAddress", BindingFlags.Instance | BindingFlags.NonPublic);
                 Find(form, "FtpUser").Text = "synthetic-first";
                 Find(form, "FtpPassword").Text = "synthetic-only";

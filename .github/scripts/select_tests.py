@@ -9,19 +9,21 @@ import subprocess
 
 
 GROUPS = ("filename", "core", "ftp", "header", "ui", "appearance",
-          "typography", "vector", "publisher", "desktop")
+          "typography", "vector", "publisher", "local-upgrade", "desktop")
 FULL = frozenset(GROUPS)
 NEEDS_EXE = frozenset(("filename", "core", "ftp", "header", "ui",
-                       "appearance", "typography", "desktop"))
+                       "appearance", "typography", "local-upgrade", "desktop"))
 
 PATH_GROUPS = {
-    "src/Packager.cs": {"filename", "core", "ftp", "header", "ui", "desktop"},
+    "src/Packager.cs": {"filename", "core", "ftp", "header", "ui", "local-upgrade", "desktop"},
     "src/FilenameRules.cs": {"filename", "header", "ui", "desktop"},
     "src/FtpUploader.cs": {"ftp", "header", "ui", "desktop"},
     "src/HeaderViewer.cs": {"header", "ui", "appearance", "typography", "desktop"},
-    "src/MainForm.cs": {"header", "ui", "appearance", "typography", "desktop"},
+    "src/MainForm.cs": {"header", "ui", "appearance", "typography", "local-upgrade", "desktop"},
     "src/UiControls.cs": {"header", "ui", "appearance", "typography", "desktop"},
-    "src/UpgradePage.cs": {"header", "ui", "appearance", "typography", "desktop"},
+    "src/UpgradePage.cs": {"header", "ui", "appearance", "typography", "local-upgrade", "desktop"},
+    "src/LocalUpgrade.cs": {"local-upgrade", "desktop"},
+    "src/UpgradeTimeoutDialog.cs": {"ui", "appearance", "typography", "local-upgrade", "desktop"},
     "tests/FilenameRulesTests.cs": {"filename"},
     "tests/CoreTests.cs": {"core"},
     "tests/NewFormatContractTests.cs": {"core"},
@@ -38,6 +40,10 @@ PATH_GROUPS = {
     "tests/ReleaseUiTests.cs": {"desktop"},
     "tests/ReleaseFtpDirectoryTests.cs": {"desktop"},
     "tests/IconPreservationTests.cs": {"desktop"},
+    "tests/LocalUpgradeProtocolTests.cs": {"local-upgrade"},
+    "tests/run-local-upgrade-protocol.ps1": {"local-upgrade"},
+    "tests/LocalUpgradeUiTests.cs": {"desktop"},
+    "tests/run-local-upgrade-ui.ps1": {"desktop"},
     "tests/check_docs.py": set(),
     "tests/test_check_docs.py": set(),
 }
