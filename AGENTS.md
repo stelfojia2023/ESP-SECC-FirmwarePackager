@@ -41,3 +41,17 @@
 - 一个版本内的准备、验证和修正提交可共用目标版本；README 说明当前版本及可取得的产物，验证记录只对实测版本负责，不改写旧结果。
 - `.github/release.json` 记录最近一次 Release 的版本与 EXE 摘要，不是工程版本权威来源；发布时须与目标版本和 EXE 一致。发布前核对源码提交、测试结果、EXE 版本及 SHA-256。
 - 主分支提交信息以 `Release v` 开头会触发自动发布；仅在用户明确要求发布、完成前述验证且发布元数据齐备时使用。已有 Release 资产不得被误认为新版本或擅自覆盖。
+
+## Agent skills
+
+### Issue tracker
+
+规格和工作项使用 GitHub Issues；见 [Issue tracker](docs/agents/issue-tracker.md)。
+
+### Triage labels
+
+分类状态使用项目的五个默认标签；见 [Triage labels](docs/agents/triage-labels.md)。
+
+### Domain docs
+
+项目采用单一领域上下文；文档入口及版本兼容规则见 [Domain docs](docs/agents/domain.md)。
