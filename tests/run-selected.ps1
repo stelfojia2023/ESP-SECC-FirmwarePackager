@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$allowed = @('filename', 'core', 'ftp', 'header', 'ui', 'appearance', 'typography', 'vector', 'publisher', 'desktop')
+$allowed = @('filename', 'core', 'ftp', 'header', 'ui', 'appearance', 'typography', 'vector', 'publisher', 'local-upgrade', 'desktop')
 $selected = @($Groups.Split(',') | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ })
 if ($selected -contains 'all') { $selected = $allowed }
 if ($selected.Count -eq 0) { throw 'Select at least one test group.' }
@@ -21,7 +21,7 @@ if (!$EvidenceDirectory) { $EvidenceDirectory = Join-Path $env:TEMP ('secc-selec
 New-Item -ItemType Directory -Path $EvidenceDirectory -Force | Out-Null
 $EvidenceDirectory = (Resolve-Path -LiteralPath $EvidenceDirectory).Path
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-$nativeGroups = @('filename', 'core', 'ftp', 'header', 'ui', 'appearance', 'typography', 'desktop')
+$nativeGroups = @('filename', 'core', 'ftp', 'header', 'ui', 'appearance', 'typography', 'local-upgrade', 'desktop')
 $needsBuild = @($selected | Where-Object { $nativeGroups -contains $_ }).Count -gt 0
 if ($needsBuild -and !(Test-Path -LiteralPath $csc)) { throw 'The 64-bit .NET Framework C# compiler was not found.' }
 $oldSettings = [Environment]::GetEnvironmentVariable('SECC_PACKAGER_SETTINGS_DIR', 'Process')
@@ -105,11 +105,16 @@ try {
         python (Join-Path $root 'tests\test_release_publisher.py')
         if ($LASTEXITCODE -ne 0) { throw 'Release publisher safeguards failed.' }
     }
+    if ($selected -contains 'local-upgrade') {
+        & (Join-Path $root 'tests\run-local-upgrade-protocol.ps1') -EvidenceDirectory (Join-Path $EvidenceDirectory 'local-upgrade-protocol')
+        if ($LASTEXITCODE -ne 0) { throw 'Local upgrade protocol tests failed.' }
+    }
     if ($selected -contains 'desktop') {
         $gui = Join-Path $EvidenceDirectory 'GuiSmokeTests.exe'
         $release = Join-Path $EvidenceDirectory 'ReleaseUiTests.exe'
         $directory = Join-Path $EvidenceDirectory 'ReleaseFtpDirectoryTests.exe'
         $icon = Join-Path $EvidenceDirectory 'IconPreservationTests.exe'
+        $localUi = Join-Path $EvidenceDirectory 'LocalUpgradeUiTests.exe'
         & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:GuiSmokeTests "/win32icon:$(Join-Path $root 'assets\linchr-mascot.ico')" "/out:$gui" $sources (Join-Path $root 'tests\FtpTests.cs') (Join-Path $root 'tests\GuiSmokeTests.cs')
         if ($LASTEXITCODE -ne 0) { throw 'Desktop GUI test compilation failed.' }
         & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$release" $core (Join-Path $root 'tests\ReleaseUiTests.cs')
@@ -118,6 +123,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Desktop FTP test compilation failed.' }
         & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Drawing.dll "/out:$icon" (Join-Path $root 'tests\IconPreservationTests.cs')
         if ($LASTEXITCODE -ne 0) { throw 'Icon comparison compilation failed.' }
+        & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:LocalUpgradeUiTests "/out:$localUi" $sources (Join-Path $root 'tests\LocalUpgradeUiTests.cs')
+        if ($LASTEXITCODE -ne 0) { throw 'Local upgrade UI test compilation failed.' }
         if ($RunDesktop) {
             & $gui (Join-Path $EvidenceDirectory 'gui-results')
             if ($LASTEXITCODE -ne 0) { throw 'Desktop GUI tests failed.' }
@@ -129,6 +136,8 @@ try {
             Copy-Item -LiteralPath $releaseExe -Destination $standaloneExe
             & $directory $standaloneExe
             if ($LASTEXITCODE -ne 0) { throw 'Desktop FTP tests failed.' }
+            & $localUi (Join-Path $root 'test-vectors\bundle-m4-esp32-v1.bin')
+            if ($LASTEXITCODE -ne 0) { throw 'Local upgrade UI tests failed.' }
             Write-Host 'PASS native interactive desktop tests'
         }
         else { Write-Host 'NOT_RUN native desktop interaction: compiled only; use -RunDesktop on an unlocked Windows desktop.' }

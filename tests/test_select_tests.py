@@ -25,19 +25,20 @@ class SelectionTests(unittest.TestCase):
 
     def test_package_changes_cover_consumers(self):
         selected = scope.select(["src/Packager.cs"])
-        self.assertEqual(selected, {"filename", "core", "ftp", "header", "ui", "desktop"})
+        self.assertEqual(selected, {"filename", "core", "ftp", "header", "ui", "local-upgrade", "desktop"})
 
     def test_ui_changes_cover_appearance_and_font(self):
         selected = scope.select(["src/MainForm.cs"])
-        self.assertEqual(selected, {"header", "ui", "appearance", "typography", "desktop"})
+        self.assertEqual(selected, {"header", "ui", "appearance", "typography", "local-upgrade", "desktop"})
         self.assertEqual(scope.select(["app.manifest"]), scope.FULL)
-        self.assertEqual(scope.select(["app.manifest"], manifest_version_only=True), selected)
+        self.assertEqual(scope.select(["app.manifest"], manifest_version_only=True),
+                         {"header", "ui", "appearance", "typography", "desktop"})
 
     def test_document_pr_with_version_updates_selects_only_relevant_groups(self):
         paths = ["README.md", "src/MainForm.cs", "src/UiControls.cs", "app.manifest",
                  "tests/UiContractTests.cs", "tests/GuiSmokeTests.cs", "tests/ReleaseUiTests.cs"]
         self.assertEqual(scope.select(paths, manifest_version_only=True),
-                         {"header", "ui", "appearance", "typography", "desktop"})
+                         {"header", "ui", "appearance", "typography", "local-upgrade", "desktop"})
         self.assertEqual(scope.select(paths), scope.FULL)
 
     def test_manifest_version_only_is_verified_against_base(self):
@@ -72,6 +73,9 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(scope.select(["test-vectors/inputs/M4.bin"]), {"ftp", "vector", "desktop"})
         self.assertEqual(scope.select(["tests/ReleaseUiTests.cs"]), {"desktop"})
         self.assertEqual(scope.select([".github/scripts/publish_release.py"]), {"publisher"})
+        self.assertEqual(scope.select(["src/LocalUpgrade.cs"]), {"local-upgrade", "desktop"})
+        self.assertEqual(scope.select(["tests/LocalUpgradeProtocolTests.cs"]), {"local-upgrade"})
+        self.assertEqual(scope.select(["tests/LocalUpgradeUiTests.cs"]), {"desktop"})
 
     def test_unknown_empty_and_configuration_changes_are_full(self):
         for paths in ([], ["new-module/file.cs"], ["build.ps1"],

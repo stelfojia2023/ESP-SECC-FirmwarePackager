@@ -7,7 +7,7 @@ New-Item -ItemType Directory -Path $dist -Force | Out-Null
 $output = Join-Path $dist 'FirmwarePackager.exe'
 $icon = Join-Path $root 'assets\linchr-mascot.ico'
 if (!(Test-Path -LiteralPath $icon)) { throw 'The application icon was not found.' }
-$sources = @((Join-Path $root 'src\Packager.cs'), (Join-Path $root 'src\FtpUploader.cs'), (Join-Path $root 'src\MainForm.cs'), (Join-Path $root 'src\UpgradePage.cs'), (Join-Path $root 'src\UiControls.cs'), (Join-Path $root 'src\FilenameRules.cs'), (Join-Path $root 'src\HeaderViewer.cs'))
+$sources = @((Join-Path $root 'src\Packager.cs'), (Join-Path $root 'src\FtpUploader.cs'), (Join-Path $root 'src\MainForm.cs'), (Join-Path $root 'src\UpgradePage.cs'), (Join-Path $root 'src\LocalUpgrade.cs'), (Join-Path $root 'src\UpgradeTimeoutDialog.cs'), (Join-Path $root 'src\UiControls.cs'), (Join-Path $root 'src\FilenameRules.cs'), (Join-Path $root 'src\HeaderViewer.cs'))
 $resources = @('click', 'success', 'failure') | ForEach-Object { '/resource:' + (Join-Path $root ('assets\sounds\' + $_ + '.wav')) + ',Sounds.' + $_ + '.wav' }
 & $csc /nologo /codepage:65001 /target:winexe /platform:x64 /optimize+ /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/win32icon:$icon" "/win32manifest:$(Join-Path $root 'app.manifest')" "/out:$output" $resources $sources
 if ($LASTEXITCODE -ne 0) { throw "Compilation failed with exit code $LASTEXITCODE" }

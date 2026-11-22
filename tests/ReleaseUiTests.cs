@@ -416,7 +416,7 @@ internal static class ReleaseUiTests
             WaitUntil(delegate { process.Refresh(); return process.MainWindowHandle != IntPtr.Zero; }, "Release GUI window did not appear.");
             Thread.Sleep(1000);
             process.Refresh();
-            if (!process.MainWindowTitle.Contains("V0.0.9")) throw new Exception("Release window version is incorrect.");
+            if (!process.MainWindowTitle.Contains("V0.0.10")) throw new Exception("Release window version is incorrect.");
             IntPtr root = process.MainWindowHandle;
             uint id = (uint)process.Id;
             string settings = Environment.GetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR");
@@ -482,21 +482,23 @@ internal static class ReleaseUiTests
             if (!PostMessage(header, WM_CLOSE, IntPtr.Zero, IntPtr.Zero)) throw new Exception("Could not close header dialog.");
             WaitUntil(delegate { return UntitledHeaderDialog(id) == IntPtr.Zero; }, "Header dialog did not close.");
             Click(Button(root, "设备升级", 0).Handle);
-            WaitUntil(delegate { return ContainsText(root, "本地网口升级协议尚未接入"); }, "Upgrade page did not appear.");
+            WaitUntil(delegate { return ContainsText(root, "准备本地升级"); }, "Upgrade page did not appear.");
             Click(Button(root, "! 操作说明", 0).Handle);
             DismissError(id, "操作说明", "设备升级");
             Node upgradeBrowse = Button(root, "选择升级 BIN", 0);
             Node upgradePath = EditInRow(root, upgradeBrowse, 0);
             if (Describe(upgradePath.Handle).Text != output || !ContainsText(root, "V000B01D15"))
                 throw new Exception("Generated package was not handed to the upgrade page.");
-            if (IsWindowEnabled(Button(root, "开始升级", 0).Handle) || !ContainsText(root, "本地网口升级协议尚未接入"))
-                throw new Exception("Unimplemented local upgrade was not clearly disabled.");
+            if (!IsWindowEnabled(Button(root, "开始升级", 0).Handle) || !ContainsText(root, "准备本地升级"))
+                throw new Exception("A valid package did not enable local upgrade.");
             Click(Button(root, "远程升级", 0).Handle);
             WaitUntil(delegate { return ContainsText(root, "运营平台升级接口尚未接入"); }, "Remote upgrade settings did not appear.");
+            if (IsWindowEnabled(Button(root, "开始升级", 0).Handle))
+                throw new Exception("Remote upgrade placeholder must remain disabled.");
             Node cpid = EditByLabel(root, "CPID");
             SetText(cpid.Handle, "TEST-CPID-001");
             Click(Button(root, "本地升级", 0).Handle);
-            WaitUntil(delegate { return ContainsText(root, "本地网口升级协议尚未接入"); }, "Local upgrade settings did not return.");
+            WaitUntil(delegate { return ContainsText(root, "准备本地升级"); }, "Local upgrade settings did not return.");
             Click(Button(root, "远程升级", 0).Handle);
             WaitUntil(delegate { return IsWindowVisible(cpid.Handle); }, "Remote upgrade settings did not return.");
             if (Describe(cpid.Handle).Text != "TEST-CPID-001") throw new Exception("CPID was lost when switching modes.");
@@ -508,6 +510,7 @@ internal static class ReleaseUiTests
                 Click(upgradeBrowse.Handle);
                 ChooseFile(id, "选择升级 BIN", previous);
                 WaitUntil(delegate { return Describe(upgradePath.Handle).Text == previous; }, "Manual upgrade file was not selected.");
+                WaitUntil(delegate { return ContainsText(root, "ESP32"); }, "Manual package validation did not finish.");
                 if (!ContainsText(root, "ESP32")) throw new Exception("Manually selected package content was not displayed.");
             }
             Click(Button(root, "固件打包", 0).Handle);
