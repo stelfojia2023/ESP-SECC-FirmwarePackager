@@ -687,8 +687,8 @@ internal static class UiContractTests
             Environment.SetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR", Path.Combine(Path.GetTempPath(), "secc-ui-contract-" + Guid.NewGuid().ToString("N")));
             Application.EnableVisualStyles();
             Assembly app = Assembly.LoadFrom(Path.GetFullPath(args[0]));
-            Assert(app.GetName().Version.ToString() == "0.0.11.0" &&
-                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.11.0",
+            Assert(app.GetName().Version.ToString() == "0.0.12.0" &&
+                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.12.0",
                 "assembly and file version match release");
             foreach (string sound in new[] { "click", "success", "failure" })
                 using (Stream stream = app.GetManifestResourceStream("Sounds." + sound + ".wav"))
@@ -700,7 +700,7 @@ internal static class UiContractTests
                 Assert(Find(form, "FtpUser").Text == "", "FTP user defaults empty");
                 Assert(Find(form, "FtpPassword").Text == "" &&
                     ((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "empty FTP password is masked");
-                Assert(form.Text.Contains("V0.0.11"), "tool version separated from format");
+                Assert(form.Text.Contains("V0.0.12"), "tool version separated from format");
                 MethodInfo applyAddress = form.GetType().GetMethod("ApplyFtpAddress", BindingFlags.Instance | BindingFlags.NonPublic);
                 Find(form, "FtpUser").Text = "synthetic-first";
                 Find(form, "FtpPassword").Text = "synthetic-only";
@@ -721,6 +721,18 @@ internal static class UiContractTests
                 Assert(Find(form, "FtpToggle") == null && Find(form, "FtpDialog") == null, "no FTP toggle or modal");
                 Assert(form.GetType().GetField("ftpDialog", BindingFlags.Instance | BindingFlags.NonPublic) == null, "no private FTP dialog");
                 Assert(Find(form, "FtpStatus") == null, "FTP status shares bottom result instead of duplicate label");
+                TextBox downloadAddress = (TextBox)Find(form, "FtpDownloadAddress");
+                Control copyDownloadAddress = Find(form, "FtpCopyDownloadAddress");
+                MethodInfo setDownloadAddress = form.GetType().GetMethod("SetFtpDownloadAddress", BindingFlags.Instance | BindingFlags.NonPublic);
+                Assert(downloadAddress != null && downloadAddress.ReadOnly && !downloadAddress.Visible, "download address is hidden until successful upload");
+                setDownloadAddress.Invoke(form, new object[] { "ftp://user:synthetic@host/Update/file.bin" });
+                Application.DoEvents();
+                Assert(downloadAddress.Visible && copyDownloadAddress.Visible && downloadAddress.Text.EndsWith("/Update/file.bin"), "download address and copy action are visible");
+                Assert(downloadAddress.Parent.Height == Find(form, "FtpAddress").Parent.Height, "download field height matches FTP inputs");
+                Assert(downloadAddress.Parent.Parent.ClientRectangle.Contains(downloadAddress.Parent.Bounds) &&
+                    copyDownloadAddress.Parent.ClientRectangle.Contains(copyDownloadAddress.Bounds), "download address controls fit result row");
+                setDownloadAddress.Invoke(form, new object[] { null });
+                Assert(!downloadAddress.Visible && downloadAddress.Text == "", "clearing download address removes previous link");
                 Assert(Find(form, "BrandHeader") == null, "no duplicate banner");
                 foreach (string type in new[] { "PFC", "LLC", "M4", "PLC", "ESP32" })
                     foreach (string prefix in new[] { "Path_", "Name_", "Version_", "Select_", "Clear_" })

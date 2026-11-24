@@ -160,6 +160,43 @@ internal static class FtpTests
         Console.WriteLine("PASS FTP address parsing, credential masking and encoded characters");
     }
 
+    private static void DownloadAddressTests()
+    {
+        string problem;
+        Uri target = new Uri("ftp://example.invalid:2121/Update/firmware.bin");
+        string url = FtpUploader.OcppDownloadUrl(target, "test-user", "pass:word", out problem);
+        Check(url == "ftp://test-user:pass:word@example.invalid:2121/Update/firmware.bin" && problem == null,
+            "Download URL must preserve effective credentials, explicit port, path and filename");
+        url = FtpUploader.OcppDownloadUrl(new Uri("ftp://example.invalid/file.bin"), "user", "", out problem);
+        Check(url == "ftp://user:@example.invalid/file.bin" && problem == null, "Empty password and root directory");
+        Check(FtpUploader.OcppDownloadUrl(new Uri("ftp://h/f"), new String('u', 47), "p", out problem) != null,
+            "47-byte user is allowed");
+        Check(FtpUploader.OcppDownloadUrl(new Uri("ftp://h/f"), "u", new String('p', 47), out problem) != null,
+            "47-byte password is allowed");
+        string[] badUsers = { "user@host", "user:name", "user%40host", new String('u', 48) };
+        foreach (string user in badUsers)
+            Check(FtpUploader.OcppDownloadUrl(target, user, "secret", out problem) == null &&
+                  !String.IsNullOrEmpty(problem) && !problem.Contains("secret"), "Unrepresentable user must be reported safely");
+        string[] badPasswords = { "p@ss", "p ss", "p%40ss", new String('p', 48) };
+        foreach (string password in badPasswords)
+            Check(FtpUploader.OcppDownloadUrl(target, "user", password, out problem) == null &&
+                  !String.IsNullOrEmpty(problem) && !problem.Contains(password), "Unrepresentable password must be reported safely");
+        foreach (string address in new[] { "ftp://example.invalid/up%20date/file.bin", "ftp://example.invalid/%E5%9B%BA%E4%BB%B6.bin", "ftp://[::1]/file.bin" })
+            Check(FtpUploader.OcppDownloadUrl(new Uri(address), "user", "secret", out problem) == null && !String.IsNullOrEmpty(problem),
+                "Unsupported encoded path or IPv6 target must not produce a device URL");
+        string prefix = "ftp://u:p@h/";
+        string maxFile = new String('a', 80);
+        Check(FtpUploader.OcppDownloadUrl(new Uri("ftp://h/" + maxFile), "u", "p", out problem) == prefix + maxFile,
+            "80-byte file name is allowed");
+        Check(FtpUploader.OcppDownloadUrl(new Uri("ftp://h/" + maxFile + "x"), "u", "p", out problem) == null, "81-byte file name is refused");
+        string baseAddress = "ftp://h/" + new String('d', 29) + "/" + maxFile;
+        string boundary = FtpUploader.OcppDownloadUrl(new Uri(baseAddress), "u", "p", out problem);
+        Check(boundary != null && boundary.Length == 122, "122-byte OCPP URL is allowed");
+        Check(FtpUploader.OcppDownloadUrl(new Uri("ftp://h/" + new String('d', 30) + "/" + maxFile), "u", "p", out problem) == null,
+            "123-byte OCPP URL is refused");
+        Console.WriteLine("PASS OCPP FTP download address: credentials, remote path and device limits");
+    }
+
     private static void UploadTests(string packagePath, string work, string legacyPath)
     {
         byte[] expected = File.ReadAllBytes(packagePath);
@@ -168,6 +205,8 @@ internal static class FtpTests
             string address = "ftp://test-user:fake.with.dot@127.0.0.1:" + server.Port + "/upgrade";
             FtpUploadResult result = FtpUploader.Upload(packagePath, address, "", "");
             Check(result.StatusCode == 226 && result.Bytes == expected.Length, "Transfer did not complete");
+            Check(result.OcppDownloadUrl == "ftp://test-user:fake.with.dot@127.0.0.1:" + server.Port + "/upgrade/" + Path.GetFileName(packagePath) && result.OcppDownloadProblem == null,
+                "Successful upload must return a device address using the effective credentials");
             Check(result.RemoteUrl.IndexOf("test-user", StringComparison.Ordinal) < 0 && result.RemoteUrl.IndexOf("fake.with.dot", StringComparison.Ordinal) < 0, "Credentials in returned URL");
             Check(server.StoredPath == "/upgrade/" + Path.GetFileName(packagePath), "Remote file path mismatch: " + server.StoredPath);
             Check(server.Uploaded != null && Convert.ToBase64String(server.Uploaded) == Convert.ToBase64String(expected), "Uploaded bytes mismatch");
@@ -180,6 +219,8 @@ internal static class FtpTests
             string address = "ftp://u%40example:p%40ss%3Aword@127.0.0.1:" + server.Port + "/目录%20测试";
             FtpUploadResult result = FtpUploader.Upload(chinesePath, address, "", "");
             Check(result.StatusCode == 250 && result.Bytes == expected.Length, "250 final completion was not accepted");
+            Check(result.OcppDownloadUrl == null && !String.IsNullOrEmpty(result.OcppDownloadProblem) && !result.OcppDownloadProblem.Contains("p@ss"),
+                "Successful upload with unsupported address remains successful without a misleading device URL");
             Check(server.StoredPath == "/目录 测试/固件 包 测试.bin", "Unicode or space in remote path was not preserved: " + server.StoredPath);
             Check(server.Uploaded != null && Convert.ToBase64String(server.Uploaded) == Convert.ToBase64String(expected), "Unicode-path upload bytes mismatch");
         }
@@ -252,6 +293,8 @@ internal static class FtpTests
                 Check(server.Uploaded != null && Convert.ToBase64String(server.Uploaded) == Convert.ToBase64String(contents[i]), "Ordinary file bytes mismatch");
                 Check(server.StoredPath == "/files/" + Path.GetFileName(paths[i]), "Ordinary remote file path mismatch");
                 Check(!result.RemoteUrl.Contains("plain-secret") && !result.RemoteUrl.Contains("plain-user"), "Ordinary result exposes credentials");
+                if (i == 0) Check(result.OcppDownloadUrl == null && !String.IsNullOrEmpty(result.OcppDownloadProblem), "Unicode file upload remains successful without an unsupported device address");
+                else Check(result.OcppDownloadUrl == "ftp://plain-user:plain-secret@127.0.0.1:" + server.Port + "/files/" + Path.GetFileName(paths[i]), "Ordinary file generates a usable address after 226 or 250");
                 Check(server.Error == null, "Ordinary FTP fixture error");
             }
         }
@@ -347,6 +390,7 @@ internal static class FtpTests
             if (Directory.Exists(work)) throw new Exception("Test directory already exists.");
             Directory.CreateDirectory(work);
             AddressTests();
+            DownloadAddressTests();
             UploadTests(Path.GetFullPath(args[0]), work, Path.GetFullPath(args[2]));
             OrdinaryFileTests(work);
             DirectoryTests();

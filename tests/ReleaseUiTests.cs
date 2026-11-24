@@ -416,7 +416,7 @@ internal static class ReleaseUiTests
             WaitUntil(delegate { process.Refresh(); return process.MainWindowHandle != IntPtr.Zero; }, "Release GUI window did not appear.");
             Thread.Sleep(1000);
             process.Refresh();
-            if (!process.MainWindowTitle.Contains("V0.0.11")) throw new Exception("Release window version is incorrect.");
+            if (!process.MainWindowTitle.Contains("V0.0.12")) throw new Exception("Release window version is incorrect.");
             IntPtr root = process.MainWindowHandle;
             uint id = (uint)process.Id;
             string settings = Environment.GetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR");

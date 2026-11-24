@@ -401,6 +401,10 @@ namespace SeccFirmwarePackager
         private TableLayoutPanel workspace;
         private SectionCard previewCard;
         private readonly TextBox ftpFile = new TextBox();
+        private readonly TextBox ftpDownloadAddress = new TextBox();
+        private readonly Button ftpCopyDownloadAddress = new RaisedButton();
+        private TableLayoutPanel ftpDownloadRow;
+        private RowStyle ftpDownloadRowStyle;
         private readonly Label ftpSourceKind = new Label();
         private string lastGeneratedPackage;
         private byte[] lastGeneratedHeader;
@@ -425,7 +429,7 @@ namespace SeccFirmwarePackager
             {
                 AppendResult(message, error ? UiColors.Error : UiColors.Ink);
             };
-            Text = "打包工具 · V0.0.11"; Name = "MainForm";
+            Text = "打包工具 · V0.0.12"; Name = "MainForm";
             MinimumSize = new Size(1100, 720);
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
             Size = new Size(Math.Max(1100, Math.Min(1320, work.Width - 24)), Math.Max(720, Math.Min(792, work.Height - 24)));
@@ -567,11 +571,26 @@ namespace SeccFirmwarePackager
             previewCard = new SectionCard { Name = "PreviewCard", Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 4), Padding = new Padding(14, 10, 14, 12), Visible = false };
             previewCard.Controls.Add(grid); workspace.Controls.Add(previewCard, 0, 1); workspace.SetColumnSpan(previewCard, 2);
             SectionCard result = new SectionCard { Name = "OperationResultCard", Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0), Padding = new Padding(14, 8, 14, 10) };
-            TableLayoutPanel resultBody = CardLayout(2); resultBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); resultBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            TableLayoutPanel resultBody = CardLayout(3); resultBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            ftpDownloadRowStyle = new RowStyle(SizeType.Absolute, 0); resultBody.RowStyles.Add(ftpDownloadRowStyle);
+            resultBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             resultBody.Controls.Add(TitleLabel("操作结果"), 0, 0);
+            ftpDownloadRow = new TableLayoutPanel { Name = "FtpDownloadRow", Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty, Visible = false };
+            ftpDownloadRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 78));
+            ftpDownloadRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            ftpDownloadRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72));
+            ftpDownloadRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            ftpDownloadAddress.Name = "FtpDownloadAddress"; ftpDownloadAddress.AccessibleName = "FTP 下载地址（含密码）"; ftpDownloadAddress.ReadOnly = true;
+            ftpCopyDownloadAddress.Name = "FtpCopyDownloadAddress"; ftpCopyDownloadAddress.Text = "复制";
+            ftpCopyDownloadAddress.AccessibleName = "复制 FTP 下载地址"; ftpCopyDownloadAddress.Dock = DockStyle.Fill;
+            StyleButton(ftpCopyDownloadAddress, false, false); ftpCopyDownloadAddress.Click += CopyFtpDownloadAddress;
+            tooltips.SetToolTip(ftpCopyDownloadAddress, "复制的下载地址包含 FTP 密码");
+            ftpDownloadRow.Controls.Add(FieldLabel("下载地址"), 0, 0);
+            ftpDownloadRow.Controls.Add(new SoftField(ftpDownloadAddress, false) { Dock = DockStyle.Fill }, 1, 0);
+            ftpDownloadRow.Controls.Add(ftpCopyDownloadAddress, 2, 0); resultBody.Controls.Add(ftpDownloadRow, 0, 1);
             details.Name = "ResultDetails"; details.Multiline = true; details.ReadOnly = true; details.ScrollBars = RichTextBoxScrollBars.Both;
             details.WordWrap = false; details.DetectUrls = false; details.MaxLength = Int32.MaxValue; details.ForeColor = UiColors.Ink;
-            resultBody.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill, Padding = new Padding(9, 5, 9, 5) }, 0, 1); result.Controls.Add(resultBody);
+            resultBody.Controls.Add(new SoftField(details, true) { Dock = DockStyle.Fill, Padding = new Padding(9, 5, 9, 5) }, 0, 2); result.Controls.Add(resultBody);
             workspace.Controls.Add(result, 0, 2); workspace.SetColumnSpan(result, 2);
             RefreshPreview();
         }
@@ -1224,7 +1243,8 @@ namespace SeccFirmwarePackager
 
         private void FtpUploadClicked(object sender, EventArgs e)
         {
-            if (ftpBusy || !ApplyFtpAddress(ftpAddress.Text, true)) return;
+            if (ftpBusy) return;
+            if (!ApplyFtpAddress(ftpAddress.Text, true)) { SetFtpDownloadAddress(null); return; }
             try
             {
                 if (String.IsNullOrWhiteSpace(ftpFile.Text) || !File.Exists(ftpFile.Text))
@@ -1241,6 +1261,7 @@ namespace SeccFirmwarePackager
             }
             catch (InvalidDataException ex)
             {
+                SetFtpDownloadAddress(null);
                 sounds.Play("failure");
                 ReportFtp("上传失败：" + ex.Message, UiColors.Error);
                 MessageBox.Show(this, ex.Message, "上传失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -1300,6 +1321,7 @@ namespace SeccFirmwarePackager
 
         private void StartFtpTransfer(string path, string address, string username, string password, bool package)
         {
+            SetFtpDownloadAddress(null);
             ftpListing = false;
             SetFtpBusy(true);
             ReportFtp((package ? "正在校验联合包并上传：" : "正在上传本地文件：") + Path.GetFileName(path), UiColors.Blue);
@@ -1322,6 +1344,8 @@ namespace SeccFirmwarePackager
                             sounds.Play("success");
                             ReportFtp("上传成功：" + Path.GetFileName(path) + "，FTP 服务器已确认接收（" + result.StatusCode + "），共 " + result.Bytes.ToString("N0") + " 字节。", UiColors.Success);
                             tooltips.SetToolTip(ftpStatus, result.RemoteUrl);
+                            if (result.OcppDownloadUrl != null) SetFtpDownloadAddress(result.OcppDownloadUrl);
+                            else ReportFtp("无法生成设备下载地址：" + result.OcppDownloadProblem, UiColors.Error);
                         }
                         else
                         {
@@ -1333,6 +1357,29 @@ namespace SeccFirmwarePackager
                 }
                 catch (InvalidOperationException) { }
             });
+        }
+
+        private void SetFtpDownloadAddress(string address)
+        {
+            bool available = !String.IsNullOrEmpty(address);
+            ftpDownloadAddress.Text = available ? address : "";
+            ftpDownloadRowStyle.Height = available ? 32 : 0;
+            ftpDownloadRow.Visible = available;
+            ftpDownloadRow.Parent.PerformLayout();
+        }
+
+        private void CopyFtpDownloadAddress(object sender, EventArgs e)
+        {
+            if (String.IsNullOrEmpty(ftpDownloadAddress.Text)) return;
+            try
+            {
+                Clipboard.SetText(ftpDownloadAddress.Text);
+                ReportFtp("已复制 FTP 下载地址。", UiColors.Ink);
+            }
+            catch (ExternalException)
+            {
+                ReportFtp("无法访问剪贴板，请稍后重试或手动复制下载地址。", UiColors.Error);
+            }
         }
 
         private void SetFtpBusy(bool busy)

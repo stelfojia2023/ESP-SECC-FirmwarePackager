@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+using SeccFirmwarePackager;
 
 // Exercises the standalone delivered EXE, using only a synthetic loopback FTP server.
 internal static class ReleaseFtpDirectoryTests
@@ -25,6 +26,12 @@ internal static class ReleaseFtpDirectoryTests
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SendMessageW")] private static extern IntPtr GetText(IntPtr window, uint message, IntPtr length, StringBuilder text);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "SendMessageW")] private static extern IntPtr SendNumber(IntPtr window, uint message, IntPtr a, IntPtr b);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr a, IntPtr b);
+    [DllImport("user32.dll")] private static extern IntPtr GetDlgItem(IntPtr dialog, int id);
+    [DllImport("user32.dll")] private static extern bool OpenClipboard(IntPtr owner);
+    [DllImport("user32.dll")] private static extern bool CloseClipboard();
+    [DllImport("user32.dll")] private static extern IntPtr GetClipboardData(uint format);
+    [DllImport("kernel32.dll")] private static extern IntPtr GlobalLock(IntPtr handle);
+    [DllImport("kernel32.dll")] private static extern bool GlobalUnlock(IntPtr handle);
 
     private static Node Describe(IntPtr handle)
     {
@@ -102,10 +109,26 @@ internal static class ReleaseFtpDirectoryTests
         if (!PostMessage(control, BM_CLICK, IntPtr.Zero, IntPtr.Zero)) throw new Exception("Button click failed");
     }
 
+    private static string ClipboardText()
+    {
+        if (!OpenClipboard(IntPtr.Zero)) return null;
+        try
+        {
+            IntPtr memory = GetClipboardData(13); // CF_UNICODETEXT
+            if (memory == IntPtr.Zero) return null;
+            IntPtr value = GlobalLock(memory);
+            if (value == IntPtr.Zero) return null;
+            try { return Marshal.PtrToStringUni(value); }
+            finally { GlobalUnlock(memory); }
+        }
+        finally { CloseClipboard(); }
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length != 1) { Console.Error.WriteLine("Need standalone EXE"); return 1; }
         Process process = null;
+        string fixture = Path.Combine(Path.GetTempPath(), "packager-ftp-link-" + Guid.NewGuid().ToString("N"));
         try
         {
             string exe = Path.GetFullPath(args[0]);
@@ -154,12 +177,44 @@ internal static class ReleaseFtpDirectoryTests
                 PostMessage(popup, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
                 WaitFor(delegate { return Window(pid, "打开 FTP 目录失败") == IntPtr.Zero; }, "Failure dialog did not close");
             }
+            Directory.CreateDirectory(fixture);
+            string input = Path.Combine(fixture, "input.bin"), bundle = Path.Combine(fixture, "bundle.bin");
+            File.WriteAllBytes(input, new byte[] { 1, 2, 3, 4 });
+            Packager.Build(new[] { new FirmwareInput { Type = FirmwareType.M4, Path = input, Name = "M4", Version = "V1" } }, bundle);
+            using (FtpTests.Server server = new FtpTests.Server("release-user", "synthetic-secret", 226))
+            {
+                string value = "ftp://release-user:synthetic-secret@127.0.0.1:" + server.Port + "/upgrade";
+                if (SendText(address.Handle, WM_SETTEXT, IntPtr.Zero, value) == IntPtr.Zero ||
+                    SendText(LabeledEdit(root, "文件").Handle, WM_SETTEXT, IntPtr.Zero, bundle) == IntPtr.Zero)
+                    throw new Exception("Cannot set standalone FTP upload inputs");
+                Click(upload.Handle);
+                IntPtr confirm = IntPtr.Zero;
+                WaitFor(delegate { confirm = Window(pid, "确认 FTP 上传"); return confirm != IntPtr.Zero; }, "Upload confirmation did not appear");
+                IntPtr yes = GetDlgItem(confirm, 6); // IDYES
+                if (yes == IntPtr.Zero) throw new Exception("Upload confirmation has no Yes button");
+                Click(yes);
+                string expected = "ftp://release-user:synthetic-secret@127.0.0.1:" + server.Port + "/upgrade/bundle.bin";
+                Node link = null;
+                WaitFor(delegate { try { link = LabeledEdit(root, "下载地址"); return link.Text == expected; } catch (Exception) { return false; } },
+                    "Standalone download address did not appear");
+                if (server.Uploaded == null || Convert.ToBase64String(server.Uploaded) != Convert.ToBase64String(File.ReadAllBytes(bundle)))
+                    throw new Exception("Standalone FTP upload bytes mismatch");
+                foreach (Node node in Children(root))
+                    if (node.ClassName.IndexOf("RICHEDIT", StringComparison.OrdinalIgnoreCase) >= 0 && node.Text.Contains("synthetic-secret"))
+                        throw new Exception("Standalone operation history contains FTP password");
+                Click(Button(root, "复制").Handle);
+                WaitFor(delegate { return ClipboardText() == expected; }, "Standalone copy button did not copy the download address");
+            }
             process.CloseMainWindow();
             if (!process.WaitForExit(10000) || process.ExitCode != 0) throw new Exception("Standalone process did not exit cleanly");
-            Console.WriteLine("PASS standalone EXE: read-only loopback FTP directory, Unicode names, sanitized URL, auth failure, uniform button placement");
+            Console.WriteLine("PASS standalone EXE: loopback FTP directory and upload, complete device download address and clipboard, credential-safe history");
             return 0;
         }
         catch (Exception e) { Console.Error.WriteLine("FAIL standalone FTP directory " + e.Message); return 1; }
-        finally { if (process != null) { process.Refresh(); if (!process.HasExited) process.Kill(); process.Dispose(); } }
+        finally
+        {
+            if (process != null) { process.Refresh(); if (!process.HasExited) process.Kill(); process.Dispose(); }
+            try { if (Directory.Exists(fixture)) Directory.Delete(fixture, true); } catch (IOException) { }
+        }
     }
 }
