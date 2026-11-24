@@ -122,6 +122,91 @@ internal static class LocalUpgradeUiTests
         if (!condition()) throw new Exception(message);
     }
 
+    private static void CheckReadAllFirmwareVersionsWithoutPackage(MainForm form)
+    {
+        TextBox path = Find<TextBox>(form, "UpgradePackagePath");
+        TextBox info = Find<TextBox>(form, "UpgradePackageInfo");
+        TextBox ip = Find<TextBox>(form, "LocalDeviceIp");
+        TextBox portBox = Find<TextBox>(form, "LocalDevicePort");
+        Label status = Find<Label>(form, "UpgradeStatus");
+        Button start = Find<Button>(form, "StartUpgradeButton");
+        Button stop = Find<Button>(form, "StopUpgradeButton");
+        Button read = Find<Button>(form, "ReadFirmwareVersionsButton");
+        string oldIp = ip.Text, oldPort = portBox.Text, oldInfo = info.Text, oldStatus = status.Text;
+        if (path.Text.Length != 0 || start.Enabled || stop.Enabled || !read.Enabled)
+            throw new Exception("An empty local package must allow read only, not start or stop.");
+
+        TcpListener server = new TcpListener(IPAddress.Loopback, 0);
+        server.Start();
+        IPEndPoint endpoint = (IPEndPoint)server.LocalEndpoint;
+        string failure = null, report = null;
+        int dialogClosed = 0;
+        Thread peer = new Thread(delegate()
+        {
+            try
+            {
+                using (TcpClient client = server.AcceptTcpClient())
+                using (NetworkStream stream = client.GetStream())
+                {
+                    stream.ReadTimeout = 10000;
+                    Request query = ReadRequest(stream, 6);
+                    byte[] expected = { 5, 1, 2, 3, 4, 5 };
+                    if (query.Payload.Length != expected.Length) throw new Exception("Wrong version query length.");
+                    for (int i = 0; i < expected.Length; i++)
+                        if (query.Payload[i] != expected[i]) throw new Exception("Wrong version query target count or order.");
+                    Reply(stream, query, new byte[] { 5, 1, 0, 2, (byte)'V', (byte)'1',
+                        2, 1, 0, 3, 2, 0, 4, 3, 0, 5, 0, 2, (byte)'V', (byte)'5' });
+                    if (stream.ReadByte() >= 0) throw new Exception("The read-only action sent another command.");
+                }
+            }
+            catch (Exception e) { failure = e.Message; }
+        });
+        Thread dismiss = new Thread(delegate()
+        {
+            DateTime until = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < until)
+            {
+                IntPtr dialog = FindWindow(null, "读取固件版本");
+                uint pid;
+                if (dialog != IntPtr.Zero && GetWindowThreadProcessId(dialog, out pid) != 0 &&
+                    pid == (uint)System.Diagnostics.Process.GetCurrentProcess().Id)
+                {
+                    IntPtr ok = GetDlgItem(dialog, 1);
+                    if (ok != IntPtr.Zero)
+                    {
+                        System.Text.StringBuilder message = new System.Text.StringBuilder(4096);
+                        GetWindowText(GetDlgItem(dialog, 65535), message, message.Capacity);
+                        report = message.ToString();
+                        SendMessage(ok, 0x00F5, IntPtr.Zero, IntPtr.Zero);
+                        Interlocked.Exchange(ref dialogClosed, 1);
+                        return;
+                    }
+                }
+                Thread.Sleep(20);
+            }
+        });
+        peer.IsBackground = true; dismiss.IsBackground = true;
+        try
+        {
+            ip.Text = endpoint.Address.ToString(); portBox.Text = endpoint.Port.ToString();
+            peer.Start(); dismiss.Start();
+            read.PerformClick();
+            if (read.Enabled || start.Enabled || stop.Enabled)
+                throw new Exception("The read must not allow concurrent read, start, or stop.");
+            WaitFor(delegate { return Interlocked.CompareExchange(ref dialogClosed, 0, 0) == 1 && read.Enabled; },
+                "The read-only version result did not appear.");
+            if (report == null || !report.Contains(endpoint.ToString()) || !report.Contains("PFC：V1") ||
+                !report.Contains("LLC：未就绪") || !report.Contains("M4：不支持查询") ||
+                !report.Contains("PLC：不可用") || !report.Contains("ESP32：V5"))
+                throw new Exception("The version result did not distinguish all five firmware versions and states: " + report);
+            if (path.Text.Length != 0 || info.Text != oldInfo || status.Text != oldStatus || start.Enabled || stop.Enabled)
+                throw new Exception("Read-only version results changed the upgrade package or task state.");
+            if (!peer.Join(3000) || failure != null || server.Pending())
+                throw new Exception("The read-only command was not the sole request: " + failure);
+        }
+        finally { server.Stop(); ip.Text = oldIp; portBox.Text = oldPort; }
+    }
+
     private static void CheckRejectedDeviceState(MainForm form, string package, byte state)
     {
         TcpListener server = new TcpListener(IPAddress.Loopback, 0);
@@ -261,7 +346,16 @@ internal static class LocalUpgradeUiTests
     private static void CheckCompleteTransfer(MainForm form, string source, string work)
     {
         string candidate = Path.Combine(work, "frozen-input.bin");
-        File.Copy(source, candidate);
+        PackageReport fixture = Packager.VerifyFile(source);
+        FirmwareInput[] inputs = new FirmwareInput[fixture.Entries.Count];
+        for (int i = 0; i < inputs.Length; i++)
+        {
+            FirmwareEntry entry = fixture.Entries[i];
+            string path = Path.Combine(work, "progress-" + entry.Type + ".bin");
+            File.WriteAllBytes(path, new byte[8 * 4096]); // Make each ACK advance by less than ten points.
+            inputs[i] = new FirmwareInput { Type = entry.Type, Path = path, Name = entry.Name, Version = entry.Version };
+        }
+        Packager.Build(inputs, candidate);
         byte[] expected = File.ReadAllBytes(candidate);
         byte[] task = new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
         TcpListener server = new TcpListener(IPAddress.Loopback, 0);
@@ -271,6 +365,7 @@ internal static class LocalUpgradeUiTests
         bool received = false, confirmed = false, observedWaiting = false;
         string confirmationError = null;
         int priorVersionConfirmations = versionConfirmationCount;
+        ManualResetEvent showFirstProgress = new ManualResetEvent(false);
         Thread peer = new Thread(delegate()
         {
             try
@@ -278,6 +373,7 @@ internal static class LocalUpgradeUiTests
                 using (TcpClient client = server.AcceptTcpClient())
                 using (NetworkStream stream = client.GetStream())
                 {
+                    client.NoDelay = true;
                     stream.ReadTimeout = 10000;
                     Request status = ReadRequest(stream, 1);
                     if (status.Payload.Length != 0) throw new Exception("Status request must have no payload.");
@@ -309,6 +405,8 @@ internal static class LocalUpgradeUiTests
                         Buffer.BlockCopy(task, 0, ack, 0, 16);
                         Buffer.BlockCopy(NetworkInt(offset), 0, ack, 16, 4);
                         Reply(stream, data, ack);
+                        if (offset == 4096 && !showFirstProgress.WaitOne(10000))
+                            throw new Exception("The UI did not show in-flight progress after the first ACK.");
                     }
                     Request end = ReadRequest(stream, 4);
                     if (end.Payload.Length != 16) throw new Exception("End request has the wrong task ID length.");
@@ -343,11 +441,24 @@ internal static class LocalUpgradeUiTests
         });
         try
         {
+            TextBoxBase log = Find<TextBoxBase>(form, "UpgradeOperationLog");
+            if (!log.Visible || !log.Multiline || !log.ReadOnly)
+                throw new Exception("The upgrade page must expose a readable, read-only operation log.");
+            int logStart = log.TextLength;
             Drop(Find<TextBox>(form, "UpgradePackagePath"), candidate);
             Find<TextBox>(form, "LocalDeviceIp").Text = "127.0.0.1";
             Find<TextBox>(form, "LocalDevicePort").Text = port.ToString();
             confirm.Start();
             Find<Button>(form, "StartUpgradeButton").PerformClick();
+            int firstPercent = 4096 * 100 / expected.Length;
+            WaitFor(delegate
+            {
+                Control progress = Find<Label>(form, "UpgradeStatus");
+                ProgressBar bar = Find<ProgressBar>(form, "UpgradeTransferProgress");
+                return progress.Visible && progress.Text == "包传输进度：" + firstPercent + "%" &&
+                    bar.Visible && bar.Value == firstPercent;
+            }, "In-flight transmission must show the first acknowledged block before the next ACK.");
+            showFirstProgress.Set();
             WaitFor(delegate { return Find<RichTextBox>(form, "ResultDetails").Text.Contains("设备已接收并校验"); },
                 "Completed transfer must report device receipt and verification.");
             WaitFor(delegate
@@ -370,8 +481,40 @@ internal static class LocalUpgradeUiTests
                 confirmationError = "The version confirmation must show queried versions and the evidence limitation.";
             if (!confirmed || !received || !observedWaiting || failure != null || confirmationError != null)
                 throw new Exception("Transfer failed: " + failure + " " + confirmationError);
+            AssertTransferMilestones(log.Text.Substring(logStart));
         }
-        finally { server.Stop(); }
+        finally { showFirstProgress.Set(); server.Stop(); }
+    }
+
+    private static void AssertTransferMilestones(string log)
+    {
+        int connected = log.IndexOf("TCP 已连接", StringComparison.Ordinal);
+        int accepted = log.IndexOf("设备已受理升级", StringComparison.Ordinal);
+        int receipt = log.IndexOf("设备已接收并校验", StringComparison.Ordinal);
+        int comparison = log.IndexOf("运行版本对比：", StringComparison.Ordinal);
+        System.Text.RegularExpressions.MatchCollection progress =
+            System.Text.RegularExpressions.Regex.Matches(log, @"包传输进度：[^\r\n]*?(\d+)%");
+        if (connected < 0 || accepted <= connected || progress.Count != 11 ||
+            progress[0].Index <= accepted || receipt <= progress[progress.Count - 1].Index || comparison <= receipt)
+            throw new Exception("Missing or out-of-order local upgrade log milestones.");
+        int previous = -1;
+        for (int i = 0; i < progress.Count; i++)
+        {
+            int percent = Int32.Parse(progress[i].Groups[1].Value);
+            if (progress[i].Value != "包传输进度：" + percent + "%" ||
+                (i == 0 && percent != 0) || (i == progress.Count - 1 && percent != 100) ||
+                percent <= previous || (i > 0 && percent / 10 <= previous / 10))
+                throw new Exception("Progress must describe acknowledged offsets at bounded intervals from 0 to 100 percent.");
+            previous = percent;
+        }
+        string versions = log.Substring(comparison);
+        if (!System.Text.RegularExpressions.Regex.IsMatch(versions,
+            @"M4[^\r\n]*目标[^\r\n]*V000B01D15[^\r\n]*(?:当前|实际|运行)[^\r\n]*V000B01D15") ||
+            !System.Text.RegularExpressions.Regex.IsMatch(versions,
+            @"ESP32[^\r\n]*目标[^\r\n]*V000B01D15[^\r\n]*(?:当前|实际|运行)[^\r\n]*V000B01D15"))
+            throw new Exception("Version comparison must include target and observed versions for each package target.");
+        if (log.Contains("安装成功") || log.Contains("升级成功"))
+            throw new Exception("Transfer and version evidence must not claim installation success.");
     }
 
     private static void CheckLostEndResponse(MainForm form, string source, string work, int recoveredState)
@@ -852,6 +995,71 @@ internal static class LocalUpgradeUiTests
         finally { server.Stop(); }
     }
 
+    private static void CheckLostEndContinueAfterLookupFailure(MainForm form, string source, string work)
+    {
+        string candidate = Path.Combine(work, "lost-end-lookup-unavailable.bin");
+        File.Copy(source, candidate);
+        byte[] expected = File.ReadAllBytes(candidate);
+        byte[] task = new byte[] { 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111 };
+        TcpListener server = new TcpListener(IPAddress.Loopback, 0);
+        server.Start();
+        int port = ((IPEndPoint)server.LocalEndpoint).Port;
+        string failure = null;
+        int manualResume = 0;
+        Thread peer = new Thread(delegate()
+        {
+            try
+            {
+                using (TcpClient client = server.AcceptTcpClient())
+                using (NetworkStream stream = client.GetStream())
+                {
+                    stream.ReadTimeout = 10000;
+                    ReceiveBundle(stream, expected, task, null);
+                }
+                for (int attempt = 0; attempt < 2; attempt++)
+                {
+                    using (TcpClient client = server.AcceptTcpClient())
+                    using (NetworkStream stream = client.GetStream())
+                    {
+                        stream.ReadTimeout = 10000;
+                        Request query = ReadRequest(stream, 5);
+                        if (query.Payload.Length != task.Length) throw new Exception("Missing original task ID.");
+                        for (int i = 0; i < task.Length; i++)
+                            if (query.Payload[i] != task[i]) throw new Exception("A different task ID was queried.");
+                        if (attempt == 0) continue; // Disconnect without answering the first lookup.
+                        if (Interlocked.CompareExchange(ref manualResume, 0, 0) == 0)
+                            throw new Exception("The second lookup was not triggered manually.");
+                        Reply(stream, query, new byte[] { 3 });
+                        Reply(stream, ReadRequest(stream, 6), MatchingVersions());
+                        if (stream.ReadByte() >= 0)
+                            throw new Exception("Unexpected traffic after the read-only re-query.");
+                    }
+                }
+            }
+            catch (Exception e) { failure = e.Message; }
+        });
+        peer.IsBackground = true;
+        peer.Start();
+        try
+        {
+            StartTestUpgrade(form, candidate, port);
+            Label status = Find<Label>(form, "UpgradeStatus");
+            Button resume = Find<Button>(form, "ContinueUpgradeButton");
+            WaitFor(delegate { return status.Text.Contains("结束应答未确认"); },
+                "A failed first lookup must leave the END result unconfirmed.");
+            if (!resume.Visible || !resume.Enabled || status.Text.Contains("版本核对通过"))
+                throw new Exception("The unresolved END must offer manual continuation without claiming success.");
+            if (server.Pending()) throw new Exception("Lookup must not resume before user confirmation.");
+            Interlocked.Exchange(ref manualResume, 1);
+            resume.PerformClick();
+            WaitFor(delegate { return status.Text.Contains("任务已结束") && status.Text.Contains("版本核对通过"); },
+                "Manual continuation must finish observing the original task.");
+            if (!peer.Join(3000) || failure != null)
+                throw new Exception("Read-only lost-END continuation failed: " + failure);
+        }
+        finally { server.Stop(); }
+    }
+
     private static void CheckDeviceTaskFailure(MainForm form, string source, string work)
     {
         string candidate = Path.Combine(work, "task-failure.bin");
@@ -1314,7 +1522,12 @@ internal static class LocalUpgradeUiTests
                 throw new Exception("A and B at the same path must be identified as separate tasks.");
             Find<TextBox>(form, "LocalDeviceIp").Text = "127.0.0.2";
             Find<TextBox>(form, "LocalDevicePort").Text = "65000";
+            string oldEndpoint = new IPEndPoint(IPAddress.Loopback, port).ToString();
+            if (!Find<Label>(form, "UpgradeLastTask").Text.Contains(oldEndpoint))
+                throw new Exception("The continuation label must expose A's device, not only the next device fields.");
             resume.PerformClick();
+            if (!Find<Label>(form, "UpgradeStatus").Text.Contains(oldEndpoint))
+                throw new Exception("Starting continuation must identify A's original device.");
             WaitFor(delegate
             {
                 string state = Find<Label>(form, "UpgradeStatus").Text;
@@ -1517,6 +1730,76 @@ internal static class LocalUpgradeUiTests
         finally { server.Stop(); }
     }
 
+    private static void CheckEndedWithoutVersionMatchTimesOut(MainForm form, string source, string work, bool disconnect)
+    {
+        string candidate = Path.Combine(work, disconnect ? "ended-version-disconnected.bin" : "ended-version-mismatch.bin");
+        File.Copy(source, candidate);
+        byte[] expected = File.ReadAllBytes(candidate);
+        byte[] task = new byte[] { 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215 };
+        TcpListener server = new TcpListener(IPAddress.Loopback, 0);
+        server.Start();
+        int port = ((IPEndPoint)server.LocalEndpoint).Port;
+        string failure = null;
+        Thread peer = new Thread(delegate()
+        {
+            try
+            {
+                using (TcpClient client = server.AcceptTcpClient())
+                using (NetworkStream stream = client.GetStream())
+                {
+                    stream.ReadTimeout = 10000;
+                    ReceiveBundle(stream, expected, task);
+                    Reply(stream, ReadRequest(stream, 5), new byte[] { 3 });
+                    Request versionQuery = ReadRequest(stream, 6);
+                    if (!disconnect)
+                    {
+                        byte[] mismatch = MatchingVersions(); mismatch[4] = (byte)'X';
+                        Reply(stream, versionQuery, mismatch);
+                        if (stream.ReadByte() >= 0)
+                            throw new Exception("Unexpected request before the one-second observation deadline.");
+                    }
+                }
+                if (disconnect)
+                {
+                    using (TcpClient client = server.AcceptTcpClient())
+                    using (NetworkStream stream = client.GetStream())
+                    {
+                        stream.ReadTimeout = 10000;
+                        Request query = ReadRequest(stream, 5);
+                        if (query.Payload.Length != task.Length) throw new Exception("Missing original task ID.");
+                        for (int i = 0; i < task.Length; i++)
+                            if (query.Payload[i] != task[i]) throw new Exception("A different task ID was queried.");
+                        // Close before answering so continuing cannot obtain new evidence.
+                    }
+                }
+            }
+            catch (Exception e) { failure = e.Message; }
+        });
+        peer.IsBackground = true;
+        peer.Start();
+        try
+        {
+            StartTestUpgrade(form, candidate, port);
+            Label status = Find<Label>(form, "UpgradeStatus");
+            Button resume = Find<Button>(form, "ContinueUpgradeButton");
+            string expectedVersionResult = disconnect ? "版本待核对" : "版本不一致";
+            for (int attempt = 0; attempt < (disconnect ? 2 : 1); attempt++)
+            {
+                if (attempt != 0) resume.PerformClick();
+                WaitFor(delegate { return status.Text.Contains("等待超时"); },
+                    "An ended task without a version match must wait for verification before timing out.");
+                if (!status.Text.Contains("任务已结束") || !status.Text.Contains(expectedVersionResult) ||
+                    status.Text.Contains("执行安装") || status.Text.Contains("版本核对通过") || !resume.Enabled)
+                    throw new Exception("Timeout must preserve the observed ended state and unresolved version check.");
+            }
+            if (!disconnect && !Find<TextBox>(form, "UpgradePackageInfo").Text.Contains("X000B01D15"))
+                throw new Exception("Timeout must retain the observed mismatching version.");
+            if (!peer.Join(3000) || failure != null)
+                throw new Exception("Ended-task version mismatch simulation failed: " + failure);
+        }
+        finally { server.Stop(); }
+    }
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -1531,6 +1814,13 @@ internal static class LocalUpgradeUiTests
             {
                 form.Show(); Application.DoEvents();
                 Find<Button>(form, "UpgradePageTab").PerformClick(); Application.DoEvents();
+                if (args.Length > 1 && args[1] == "read-firmware-versions")
+                {
+                    CheckReadAllFirmwareVersionsWithoutPackage(form);
+                    form.Close();
+                    Console.WriteLine("PASS local UI: read all five firmware versions with one read-only request and no package");
+                    return 0;
+                }
                 if (args.Length > 1 && args[1] == "review-reboot")
                 {
                     CheckRebootWithUnknownTask(form, Path.GetFullPath(args[0]), work);
@@ -1588,18 +1878,22 @@ internal static class LocalUpgradeUiTests
                 if (args.Length > 1 && args[1] == "recovery-query-error")
                 {
                     CheckRecoveryQueryError(form, Path.GetFullPath(args[0]), work);
+                    CheckLostEndContinueAfterLookupFailure(form, Path.GetFullPath(args[0]), work);
                     form.Close();
-                    Console.WriteLine("PASS recovery query preserves confirmed receipt");
+                    Console.WriteLine("PASS recovery query preserves confirmed receipt and permits read-only manual re-query");
                     return 0;
                 }
                 if (args.Length > 1 && args[1] == "wait-deadline")
                 {
                     SetWaitSeconds(form, 1, true);
+                    CheckEndedWithoutVersionMatchTimesOut(form, Path.GetFullPath(args[0]), work, false);
+                    CheckEndedWithoutVersionMatchTimesOut(form, Path.GetFullPath(args[0]), work, true);
                     CheckWaitDeadline(form, Path.GetFullPath(args[0]), work);
                     form.Close();
                     Console.WriteLine("PASS waiting deadline bounds a silent query");
                     return 0;
                 }
+                CheckReadAllFirmwareVersionsWithoutPackage(form);
                 TextBox path = Find<TextBox>(form, "UpgradePackagePath");
                 TextBox info = Find<TextBox>(form, "UpgradePackageInfo");
                 Button start = Find<Button>(form, "StartUpgradeButton");
@@ -1646,6 +1940,7 @@ internal static class LocalUpgradeUiTests
                 CheckLostEndUnconfirmed(form, Path.GetFullPath(args[0]), work, 11);
                 CheckLostEndUnconfirmed(form, Path.GetFullPath(args[0]), work, 4);
                 CheckRecoveryQueryError(form, Path.GetFullPath(args[0]), work);
+                CheckLostEndContinueAfterLookupFailure(form, Path.GetFullPath(args[0]), work);
                 CheckLostBeginResponse(form, Path.GetFullPath(args[0]), work);
                 CheckWrongOffsetStops(form, Path.GetFullPath(args[0]), work);
                 Console.WriteLine("PASS local UI: lost responses, task states, explicit failure and bad offset");
@@ -1657,6 +1952,8 @@ internal static class LocalUpgradeUiTests
                 CheckTimeoutAndNextPackage(form, Path.GetFullPath(args[0]), work, true);
                 SetWaitSeconds(form, 1, false);
                 CheckRejectedNewTaskKeepsPrior(form, Path.GetFullPath(args[0]), work);
+                CheckEndedWithoutVersionMatchTimesOut(form, Path.GetFullPath(args[0]), work, false);
+                CheckEndedWithoutVersionMatchTimesOut(form, Path.GetFullPath(args[0]), work, true);
                 CheckWaitDeadline(form, Path.GetFullPath(args[0]), work);
                 Console.WriteLine("PASS local UI: timeout settings, reboot, A/B handoff and continue waiting");
                 if (!Find<Button>(form, "ContinueUpgradeButton").Visible)

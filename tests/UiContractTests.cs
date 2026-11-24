@@ -546,6 +546,21 @@ internal static class UiContractTests
         Assert(Find(form, "LocalUpgradeSettings").Visible && !Find(form, "RemoteUpgradeSettings").Visible, "local settings selected initially");
         Assert(Find(form, "StartUpgradeButton").Enabled && Find(form, "UpgradeStatus").Text.Contains("准备本地升级"),
             "a valid package enables the local upgrade action");
+        Control stop = Find(form, "StopUpgradeButton");
+        Control stopHint = Find(form, "StopUpgradeHint");
+        Control readVersions = Find(form, "ReadFirmwareVersionsButton");
+        Assert(stop.Visible && !stop.Enabled && stop.Text == "停止升级" && stopHint.Visible && stopHint.Text.Contains("协议未接入"),
+            "local stop is only a disabled placeholder with an explicit protocol notice");
+        Control localStart = Find(form, "StartUpgradeButton");
+        Assert(localStart.Parent == stop.Parent && localStart.Top == stop.Top &&
+            stop.Left >= localStart.Right && stop.Left - localStart.Right <= 12,
+            "local start and stop are immediate horizontal neighbors");
+        Size mainActionSize = Find(form, "BuildButton").Size;
+        Assert(localStart.Size == mainActionSize && stop.Size == mainActionSize,
+            "local start and stop share main button size: " + localStart.Size + " / " + stop.Size + " vs " + mainActionSize);
+        Assert(!Find(form, "UpgradeTransferProgress").Visible, "transfer bar is hidden until the device accepts an upgrade");
+        Assert(readVersions.Visible && readVersions.Enabled && readVersions.Text == "读取固件版本",
+            "local read-only version control is available independently of start");
         Assert(file.ReadOnly && file.AllowDrop && Find(form, "UpgradePackageHint").AllowDrop, "upgrade BIN supports safe drag and selection");
         TextBox localIp = (TextBox)Find(form, "LocalDeviceIp");
         TextBox localPort = (TextBox)Find(form, "LocalDevicePort");
@@ -554,6 +569,8 @@ internal static class UiContractTests
         ((Button)Find(form, "RemoteUpgradeMode")).PerformClick(); Application.DoEvents();
         Assert(Find(form, "RemoteUpgradeSettings").Visible && !Find(form, "LocalUpgradeSettings").Visible, "remote settings replace local settings");
         Assert(Find(form, "UpgradeStatus").Text.Contains("平台") && !Find(form, "StartUpgradeButton").Enabled, "remote API is not faked");
+        Assert(!stop.Visible && !stop.Enabled && !stopHint.Visible && !readVersions.Visible,
+            "local stop and version-read controls do not appear in remote mode");
         TextBox endpoint = (TextBox)Find(form, "RemotePlatformAddress");
         TextBox cpid = (TextBox)Find(form, "RemoteCpid");
         TextBox password = (TextBox)Find(form, "RemotePassword");
@@ -561,6 +578,8 @@ internal static class UiContractTests
         Assert(password.UseSystemPasswordChar, "remote platform password is masked");
         ((Button)Find(form, "LocalUpgradeMode")).PerformClick(); Application.DoEvents();
         Assert(localIp.Text == "192.0.2.10" && localPort.Text == "12345", "local settings survive mode change");
+        Assert(stop.Visible && !stop.Enabled && readVersions.Visible && readVersions.Enabled && Find(form, "StartUpgradeButton").Enabled,
+            "switching back preserves enabled start and read actions while stop remains disabled");
         ((Button)Find(form, "RemoteUpgradeMode")).PerformClick(); Application.DoEvents();
         Assert(endpoint.Text == "https://example.invalid/api" && cpid.Text == "TEST-CPID-001" && password.Text == "synthetic-only",
             "remote settings survive mode change");
@@ -592,7 +611,8 @@ internal static class UiContractTests
             Size caption = TextRenderer.MeasureText(c.Text, c.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
             Assert(c.ClientSize.Width >= caption.Width + 12 && c.ClientSize.Height >= caption.Height + 4, "upgrade caption fits " + name);
         }
-        Assert(Find(form, "StartUpgradeButton").Size == Find(form, "BuildButton").Size, "upgrade action shares main button size");
+        Size remoteStartSize = Find(form, "StartUpgradeButton").Size;
+        Assert(remoteStartSize == mainActionSize, "remote upgrade action shares main button size: " + remoteStartSize + " vs " + mainActionSize);
         form.Size = form.MinimumSize; form.PerformLayout(); Application.DoEvents();
         Panel scroll = (Panel)Find(form, "UpgradeScroll");
         Control start = Find(form, "StartUpgradeButton");
@@ -667,8 +687,8 @@ internal static class UiContractTests
             Environment.SetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR", Path.Combine(Path.GetTempPath(), "secc-ui-contract-" + Guid.NewGuid().ToString("N")));
             Application.EnableVisualStyles();
             Assembly app = Assembly.LoadFrom(Path.GetFullPath(args[0]));
-            Assert(app.GetName().Version.ToString() == "0.0.10.0" &&
-                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.10.0",
+            Assert(app.GetName().Version.ToString() == "0.0.11.0" &&
+                System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.GetFullPath(args[0])).FileVersion == "0.0.11.0",
                 "assembly and file version match release");
             foreach (string sound in new[] { "click", "success", "failure" })
                 using (Stream stream = app.GetManifestResourceStream("Sounds." + sound + ".wav"))
@@ -680,7 +700,7 @@ internal static class UiContractTests
                 Assert(Find(form, "FtpUser").Text == "", "FTP user defaults empty");
                 Assert(Find(form, "FtpPassword").Text == "" &&
                     ((TextBox)Find(form, "FtpPassword")).UseSystemPasswordChar, "empty FTP password is masked");
-                Assert(form.Text.Contains("V0.0.10"), "tool version separated from format");
+                Assert(form.Text.Contains("V0.0.11"), "tool version separated from format");
                 MethodInfo applyAddress = form.GetType().GetMethod("ApplyFtpAddress", BindingFlags.Instance | BindingFlags.NonPublic);
                 Find(form, "FtpUser").Text = "synthetic-first";
                 Find(form, "FtpPassword").Text = "synthetic-only";
