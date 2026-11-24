@@ -192,7 +192,8 @@ namespace SeccFirmwarePackager
             upgradeActions.ColumnCount = 2; upgradeActions.RowCount = 2;
             upgradeActions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 186));
             upgradeActions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 186));
-            upgradeActions.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+            // 40 px buttons need 45 px including their 2 px top and 3 px bottom margins.
+            upgradeActions.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
             upgradeActions.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             upgradeActions.Controls.Add(start, 0, 0);
             PrepareMode(stopUpgrade, "StopUpgradeButton", "停止升级");

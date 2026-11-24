@@ -555,6 +555,9 @@ internal static class UiContractTests
         Assert(localStart.Parent == stop.Parent && localStart.Top == stop.Top &&
             stop.Left >= localStart.Right && stop.Left - localStart.Right <= 12,
             "local start and stop are immediate horizontal neighbors");
+        Size mainActionSize = Find(form, "BuildButton").Size;
+        Assert(localStart.Size == mainActionSize && stop.Size == mainActionSize,
+            "local start and stop share main button size: " + localStart.Size + " / " + stop.Size + " vs " + mainActionSize);
         Assert(!Find(form, "UpgradeTransferProgress").Visible, "transfer bar is hidden until the device accepts an upgrade");
         Assert(readVersions.Visible && readVersions.Enabled && readVersions.Text == "读取固件版本",
             "local read-only version control is available independently of start");
@@ -608,7 +611,8 @@ internal static class UiContractTests
             Size caption = TextRenderer.MeasureText(c.Text, c.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
             Assert(c.ClientSize.Width >= caption.Width + 12 && c.ClientSize.Height >= caption.Height + 4, "upgrade caption fits " + name);
         }
-        Assert(Find(form, "StartUpgradeButton").Size == Find(form, "BuildButton").Size, "upgrade action shares main button size");
+        Size remoteStartSize = Find(form, "StartUpgradeButton").Size;
+        Assert(remoteStartSize == mainActionSize, "remote upgrade action shares main button size: " + remoteStartSize + " vs " + mainActionSize);
         form.Size = form.MinimumSize; form.PerformLayout(); Application.DoEvents();
         Panel scroll = (Panel)Find(form, "UpgradeScroll");
         Control start = Find(form, "StartUpgradeButton");
