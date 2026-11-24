@@ -40,6 +40,8 @@ internal static class ReleaseUiTests
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out PointNative point);
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(PointNative point);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint attach, uint attachTo, bool value);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll")] private static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
 
@@ -94,26 +96,107 @@ internal static class ReleaseUiTests
             throw new Exception("Could not click a control.");
     }
 
+    private static string WindowDescription(IntPtr window)
+    {
+        StringBuilder className = new StringBuilder(256);
+        GetClassName(window, className, className.Capacity);
+        uint pid;
+        GetWindowThreadProcessId(window, out pid);
+        string name;
+        try { name = Process.GetProcessById((int)pid).ProcessName; }
+        catch (Exception) { name = "?"; }
+        return "class=" + className + ", pid=" + pid + ", name=" + name;
+    }
+
+    // Windows enforces a foreground lock; a transient refusal must not be
+    // mistaken for a failed swatch click.
+    private static void FocusWindow(IntPtr root)
+    {
+        for (int attempt = 0; attempt < 30; attempt++)
+        {
+            // A synthetic Alt key event clears the foreground lock on desktops
+            // where another process currently owns input.
+            keybd_event(0x12, 0, 0, UIntPtr.Zero);
+            keybd_event(0x12, 0, 2, UIntPtr.Zero);
+            IntPtr foreground = GetForegroundWindow();
+            uint foregroundPid;
+            uint foregroundThread = GetWindowThreadProcessId(foreground, out foregroundPid);
+            uint currentThread = GetCurrentThreadId();
+            bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
+                AttachThreadInput(currentThread, foregroundThread, true);
+            try { SetForegroundWindow(root); }
+            finally
+            {
+                if (attached) AttachThreadInput(currentThread, foregroundThread, false);
+            }
+            if (GetForegroundWindow() == root) return;
+            Thread.Sleep(100);
+        }
+        throw new Exception("Could not focus the application window.");
+    }
+
     private static void ClickSwatch(IntPtr root, string label, string key, string settings)
     {
         Node swatch = Button(root, label, 0);
         if (!IsWindowVisible(swatch.Handle)) throw new Exception("Appearance swatch is not visible: " + label);
         PointNative old;
-        if (!GetCursorPos(out old) || !SetForegroundWindow(root)) throw new Exception("Could not focus swatch test.");
+        if (!GetCursorPos(out old)) throw new Exception("Could not read the cursor position.");
+        FocusWindow(root);
         int x = (swatch.Bounds.Left + swatch.Bounds.Right) / 2, y = (swatch.Bounds.Top + swatch.Bounds.Bottom) / 2;
         try
         {
-            if (!SetCursorPos(x, y)) throw new Exception("Could not move to appearance swatch.");
-            Thread.Sleep(100);
-            mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
-            Thread.Sleep(70);
-            mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
             string path = Path.Combine(settings, "appearance.txt");
-            WaitUntil(delegate
+            bool persisted = false;
+            string lastState = "";
+            for (int attempt = 0; attempt < 5 && !persisted; attempt++)
             {
-                try { return File.Exists(path) && File.ReadAllText(path) == key; }
-                catch (IOException) { return false; }
-            }, "Native swatch click did not persist " + key);
+                FocusWindow(root);
+                // Let a previously shown tooltip disappear before hovering the
+                // swatch again; tooltips are topmost and would swallow clicks.
+                if (!SetCursorPos(0, 0)) throw new Exception("Could not move away from the appearance swatch.");
+                Thread.Sleep(400);
+                if (!SetCursorPos(x, y)) throw new Exception("Could not move to appearance swatch.");
+                Thread.Sleep(30);
+                PointNative pointer;
+                uint pointerPid;
+                GetCursorPos(out pointer);
+                IntPtr under = WindowFromPoint(pointer);
+                StringBuilder className = new StringBuilder(256);
+                GetClassName(under, className, className.Capacity);
+                GetWindowThreadProcessId(under, out pointerPid);
+                uint appPid;
+                GetWindowThreadProcessId(root, out appPid);
+                if (pointerPid != appPid ||
+                    className.ToString().StartsWith("tooltips_", StringComparison.OrdinalIgnoreCase))
+                {
+                    lastState = "pointer under " + WindowDescription(under);
+                    Thread.Sleep(200);
+                    continue;
+                }
+                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+                Thread.Sleep(70);
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+                Stopwatch watch = Stopwatch.StartNew();
+                while (watch.ElapsedMilliseconds < 3000)
+                {
+                    try
+                    {
+                        if (File.Exists(path) && File.ReadAllText(path) == key) { persisted = true; break; }
+                    }
+                    catch (IOException) { }
+                    Thread.Sleep(100);
+                }
+                if (!persisted)
+                {
+                    string content;
+                    try { content = File.Exists(path) ? File.ReadAllText(path) : "<missing>"; }
+                    catch (Exception) { content = "<unreadable>"; }
+                    lastState = "file=" + content + ", foreground=" + (GetForegroundWindow() == root) +
+                        ", swatch=" + WindowDescription(swatch.Handle) +
+                        ", pointer=" + WindowDescription(WindowFromPoint(pointer));
+                }
+            }
+            if (!persisted) throw new Exception("Native swatch click did not persist " + key + " (" + lastState + ")");
         }
         finally { mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero); SetCursorPos(old.X, old.Y); }
     }
@@ -303,7 +386,8 @@ internal static class ReleaseUiTests
                         GetWindowThreadProcessId(target, out targetProcess);
                         if (actualProcess != targetProcess)
                         {
-                            failure = new Exception("Another application covers the test drop target.");
+                            failure = new Exception("Another application covers the test drop target: " +
+                                WindowDescription(WindowFromPoint(finalPosition)));
                             keybd_event(0x1B, 0, 0, UIntPtr.Zero);
                             keybd_event(0x1B, 0, 2, UIntPtr.Zero);
                             Thread.Sleep(100);
@@ -351,25 +435,66 @@ internal static class ReleaseUiTests
         if (!started || effect != DragDropEffects.Copy) throw new Exception("Native file drag was not accepted by the application.");
     }
 
+    private const int ClipboardCannotOpen = unchecked((int)0x800401D0);
+
+    // The shell can briefly lock the clipboard while rendering a file-drop
+    // list; retry only that transient failure.
+    private static void ClipboardRetry(Action action)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try { action(); return; }
+            catch (ExternalException ex)
+            {
+                if (attempt >= 99 || ex.HResult != ClipboardCannotOpen) throw;
+                Thread.Sleep(100);
+            }
+        }
+    }
+
+    private static T ClipboardRetry<T>(Func<T> action)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try { return action(); }
+            catch (ExternalException ex)
+            {
+                if (attempt >= 99 || ex.HResult != ClipboardCannotOpen) throw;
+                Thread.Sleep(100);
+            }
+        }
+    }
+
+    private static bool TryClipboardRetry(Action action)
+    {
+        try { ClipboardRetry(action); return true; }
+        catch (ExternalException ex)
+        {
+            if (ex.HResult == ClipboardCannotOpen) return false;
+            throw;
+        }
+    }
+
     private static void PasteCopiedFile(IntPtr root, IntPtr target, string path)
     {
-        IDataObject previous = Clipboard.GetDataObject();
+        IDataObject previous = ClipboardRetry(delegate { return Clipboard.GetDataObject(); });
         PointNative oldCursor; GetCursorPos(out oldCursor);
         try
         {
             System.Collections.Specialized.StringCollection files = new System.Collections.Specialized.StringCollection();
             files.Add(path);
-            Clipboard.SetFileDropList(files);
+            ClipboardRetry(delegate { Clipboard.SetFileDropList(files); });
             Rect bounds;
             if (!GetWindowRect(target, out bounds)) throw new Exception("Cannot locate the clipboard input target.");
-            SetForegroundWindow(root);
+            FocusWindow(root);
             SetCursorPos((bounds.Left + bounds.Right) / 2, (bounds.Top + bounds.Bottom) / 2);
             Thread.Sleep(100);
             PointNative actual; GetCursorPos(out actual);
             uint pointerProcess, appProcess;
             GetWindowThreadProcessId(WindowFromPoint(actual), out pointerProcess);
             GetWindowThreadProcessId(root, out appProcess);
-            if (pointerProcess != appProcess) throw new Exception("Another application covers the paste target.");
+            if (pointerProcess != appProcess) throw new Exception("Another application covers the paste target: " +
+                WindowDescription(WindowFromPoint(actual)));
             mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
             mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
             Thread.Sleep(200);
@@ -384,13 +509,18 @@ internal static class ReleaseUiTests
         {
             try
             {
-                if (Clipboard.ContainsFileDropList())
+                System.Collections.Specialized.StringCollection current = ClipboardRetry(delegate
                 {
-                    System.Collections.Specialized.StringCollection current = Clipboard.GetFileDropList();
-                    if (current.Count == 1 && current[0] == path)
+                    return Clipboard.ContainsFileDropList()
+                        ? Clipboard.GetFileDropList() : new System.Collections.Specialized.StringCollection();
+                });
+                if (current.Count == 1 && current[0] == path)
+                {
+                    // Restoring the caller's clipboard is best-effort.
+                    TryClipboardRetry(delegate
                     {
                         if (previous == null) Clipboard.Clear(); else Clipboard.SetDataObject(previous, true);
-                    }
+                    });
                 }
             }
             finally { SetCursorPos(oldCursor.X, oldCursor.Y); }
@@ -414,7 +544,9 @@ internal static class ReleaseUiTests
             File.WriteAllBytes(input, new byte[] { 0, 1, 2, 3, 255, 9 });
             process = Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe), UseShellExecute = true });
             WaitUntil(delegate { process.Refresh(); return process.MainWindowHandle != IntPtr.Zero; }, "Release GUI window did not appear.");
-            Thread.Sleep(1000);
+            // Let the desktop settle after any preceding GUI test; native
+            // swatch clicks fail while another window still owns activation.
+            Thread.Sleep(3000);
             process.Refresh();
             if (!process.MainWindowTitle.Contains("V0.0.12")) throw new Exception("Release window version is incorrect.");
             IntPtr root = process.MainWindowHandle;
@@ -433,7 +565,7 @@ internal static class ReleaseUiTests
             DismissError(id, "操作说明", "文件与版本");
             Node browseM4 = Button(root, "选择 M4 固件", 0);
             Node dropTarget = EditInRow(root, browseM4, 0);
-            SetForegroundWindow(root);
+            FocusWindow(root);
             Thread.Sleep(200);
             RealDrag(dropTarget.Handle, input);
             WaitUntil(delegate { return Describe(dropTarget.Handle).Text == input; }, "Native file drag did not populate the input path.");

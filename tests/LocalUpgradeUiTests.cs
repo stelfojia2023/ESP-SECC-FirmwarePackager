@@ -26,6 +26,20 @@ internal static class LocalUpgradeUiTests
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder text, int maxCount);
 
+    // The confirmation message is filled after the dialog and its buttons
+    // appear; wait for it instead of reading an empty control.
+    private static string ReadDialogMessage(IntPtr dialog)
+    {
+        for (int attempt = 0; attempt < 100; attempt++)
+        {
+            System.Text.StringBuilder message = new System.Text.StringBuilder(4096);
+            GetWindowText(GetDlgItem(dialog, 65535), message, message.Capacity);
+            if (message.Length != 0) return message.ToString();
+            Thread.Sleep(20);
+        }
+        return "";
+    }
+
     private static void StartVersionConfirmationHelper()
     {
         Thread helper = new Thread(delegate()
@@ -43,9 +57,7 @@ internal static class LocalUpgradeUiTests
                     if (button != IntPtr.Zero)
                     {
                         if (reject) Interlocked.Exchange(ref rejectNextVersionConfirmation, 0);
-                        System.Text.StringBuilder message = new System.Text.StringBuilder(4096);
-                        GetWindowText(GetDlgItem(dialog, 65535), message, message.Capacity);
-                        versionConfirmationText = message.ToString();
+                        versionConfirmationText = ReadDialogMessage(dialog);
                         Interlocked.Increment(ref versionConfirmationCount);
                         SendMessage(button, 0x00F5, IntPtr.Zero, IntPtr.Zero);
                         while (FindWindow(null, "确认设备版本") == dialog) Thread.Sleep(10);
@@ -412,9 +424,8 @@ internal static class LocalUpgradeUiTests
         peer.Start();
         Thread confirm = InitialConfirmation(delegate(IntPtr dialog)
         {
-            System.Text.StringBuilder message = new System.Text.StringBuilder(4096);
-            GetWindowText(GetDlgItem(dialog, 65535), message, message.Capacity);
-            if (!message.ToString().Contains("旧包"))
+            string message = ReadDialogMessage(dialog);
+            if (!message.Contains("旧包"))
                 confirmationError = "The first confirmation must explain the waiting-package replacement risk.";
             // Replace the selected file after the user sees the snapshot.
             File.WriteAllBytes(candidate, new byte[] { 9, 9, 9 });

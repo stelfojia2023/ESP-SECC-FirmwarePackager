@@ -47,6 +47,100 @@ internal static class GuiSmokeTests
         Application.DoEvents();
     }
 
+    // A rapid clipboard update can briefly resolve to the previous object;
+    // republish and paste again instead of failing the behaviour check.
+    private static void PasteFirmwareRetry(TextBox path, Func<bool> done, Action prepare)
+    {
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            prepare();
+            PasteFirmware(path);
+            if (done()) return;
+            Thread.Sleep(100);
+        }
+    }
+
+    private static bool HistoryContains(RichTextBox history, int from, string text)
+    {
+        string current = history.Text;
+        return current.Length >= from && current.Substring(from).Contains(text);
+    }
+
+    private const int ClipboardCannotOpen = unchecked((int)0x800401D0);
+
+    // Windows can briefly refuse OpenClipboard while the shell renders the
+    // previous file-drop list. Retry only that transient failure.
+    private static void ClipboardRetry(Action action)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try { action(); return; }
+            catch (ExternalException ex)
+            {
+                if (attempt >= 99 || ex.HResult != ClipboardCannotOpen) throw;
+                Thread.Sleep(100);
+            }
+        }
+    }
+
+    private static T ClipboardRetry<T>(Func<T> action)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try { return action(); }
+            catch (ExternalException ex)
+            {
+                if (attempt >= 99 || ex.HResult != ClipboardCannotOpen) throw;
+                Thread.Sleep(100);
+            }
+        }
+    }
+
+    private static bool TryClipboardRetry(Action action)
+    {
+        try { ClipboardRetry(action); return true; }
+        catch (ExternalException ex)
+        {
+            if (ex.HResult == ClipboardCannotOpen) return false;
+            throw;
+        }
+    }
+
+    private static System.Collections.Specialized.StringCollection ClipboardFiles()
+    {
+        return ClipboardRetry(delegate
+        {
+            return Clipboard.ContainsFileDropList()
+                ? Clipboard.GetFileDropList() : new System.Collections.Specialized.StringCollection();
+        });
+    }
+
+    private static void SetClipboardFiles(System.Collections.Specialized.StringCollection files)
+    {
+        for (int attempt = 0; attempt < 20; attempt++)
+        {
+            ClipboardRetry(delegate { Clipboard.SetFileDropList(files); });
+            System.Collections.Specialized.StringCollection actual = ClipboardFiles();
+            bool same = actual.Count == files.Count;
+            for (int i = 0; same && i < actual.Count; i++) same = actual[i] == files[i];
+            Thread.Sleep(50);
+            if (same) return;
+        }
+        throw new Exception("Clipboard file list did not match the requested files.");
+    }
+
+    private static void SetClipboardText(string text)
+    {
+        for (int attempt = 0; attempt < 20; attempt++)
+        {
+            ClipboardRetry(delegate { Clipboard.SetText(text); });
+            string actual = ClipboardRetry(delegate { return Clipboard.ContainsText() ? Clipboard.GetText() : null; });
+            Thread.Sleep(50);
+            if (actual == text) return;
+        }
+        throw new Exception("Clipboard text did not match the requested value.");
+    }
+
     private static void TestFirmwareFileClipboard(MainForm form, string directory)
     {
         string delayedPath = Path.Combine(directory, "M4_V1_delayed.bin");
@@ -55,7 +149,7 @@ internal static class GuiSmokeTests
         int attempts = 0;
         string recovered = MainForm.ReadClipboardFirmwarePath(delegate { return ++attempts == 1 ? empty : ready; });
         if (attempts != 2 || recovered != delayedPath) throw new Exception("Transient empty clipboard data must be retried");
-        IDataObject previous = Clipboard.GetDataObject();
+        IDataObject previous = ClipboardRetry(delegate { return Clipboard.GetDataObject(); });
         string expectedText = null;
         string[] expectedFiles = null;
         try
@@ -64,25 +158,33 @@ internal static class GuiSmokeTests
             {
                 string first = Path.Combine(directory, type == "PLC" ? "PLC_maya-2.6.7.10.simage" : type + "_V1_复制.bin");
                 string second = Path.Combine(directory, type == "PLC" ? "PLC_maya-2.6.7.11.simage" : type + "_V2_粘贴.bin");
+                string secondText = "  \"" + second + "\"  ";
                 File.WriteAllBytes(first, new byte[] { 1, 2, 3 });
                 File.WriteAllBytes(second, new byte[] { 4, 5, 6 });
                 TextBox path = Find<TextBox>(form, "Path_" + type);
                 System.Collections.Specialized.StringCollection files = new System.Collections.Specialized.StringCollection();
                 files.Add(first);
-                Clipboard.SetFileDropList(files);
                 expectedFiles = new[] { first }; expectedText = null;
-                PasteFirmware(path);
+                PasteFirmwareRetry(path, delegate
+                {
+                    return path.Text == first &&
+                        Find<TextBox>(form, "Name_" + type).Text == Path.GetFileNameWithoutExtension(first);
+                }, delegate { SetClipboardFiles(files); });
                 if (path.Text != first || Find<TextBox>(form, "Name_" + type).Text != Path.GetFileNameWithoutExtension(first))
                     throw new Exception("Pasting a copied firmware file must populate " + type);
 
-                expectedText = "  \"" + second + "\"  "; expectedFiles = null;
-                Clipboard.SetText(expectedText);
-                PasteFirmware(path);
+                expectedText = secondText; expectedFiles = null;
+                PasteFirmwareRetry(path, delegate { return path.Text == second; },
+                    delegate { SetClipboardText(expectedText); });
                 if (type == "PLC" && path.Text == second && Find<TextBox>(form, "Version_PLC").Text != "maya-2.6.7.11")
                     throw new Exception("Pasting PLC .simage must retain its complete maya version");
                 if (path.Text != second)
                 {
-                    if (!Clipboard.ContainsText() || Clipboard.GetText() != expectedText)
+                    string currentText = ClipboardRetry(delegate
+                    {
+                        return Clipboard.ContainsText() ? Clipboard.GetText() : null;
+                    });
+                    if (currentText != expectedText)
                         throw new Exception("Clipboard changed outside the test while pasting a firmware path");
                     throw new Exception("Pasting a quoted firmware path must populate " + type);
                 }
@@ -92,27 +194,38 @@ internal static class GuiSmokeTests
                 {
                     string wrongType = Path.Combine(directory, "PFC_V1_复制.bin");
                     files.Clear(); files.Add(wrongType);
-                    Clipboard.SetFileDropList(files);
                     expectedFiles = new[] { wrongType }; expectedText = null;
                     string beforeTypeError = history.Text;
-                    PasteFirmware(path);
-                    if (path.Text != second || !history.Text.Substring(beforeTypeError.Length).Contains("不能加载到 M4 栏"))
+                    for (int attempt = 0; attempt < 5; attempt++)
+                    {
+                        SetClipboardText(secondText); PasteFirmware(path);
+                        if (path.Text != second) continue;
+                        SetClipboardFiles(files);
+                        PasteFirmware(path);
+                        if (path.Text == second && HistoryContains(history, beforeTypeError.Length, "不能加载到 M4 栏")) break;
+                    }
+                    if (path.Text != second || !HistoryContains(history, beforeTypeError.Length, "不能加载到 M4 栏"))
                         throw new Exception("Pasting a mismatched type must leave M4 unchanged");
                 }
                 files.Clear(); files.Add(first); files.Add(second);
-                Clipboard.SetFileDropList(files);
                 expectedFiles = new[] { first, second }; expectedText = null;
                 string beforeMultipleError = history.Text;
-                PasteFirmware(path);
                 string multipleMessage = type == "PLC" ? "请复制一个 PLC 固件文件" : "请复制一个 BIN 固件文件";
-                if (path.Text != second || !history.Text.Substring(beforeMultipleError.Length).Contains(multipleMessage))
+                for (int attempt = 0; attempt < 5; attempt++)
                 {
-                    System.Collections.Specialized.StringCollection actual = Clipboard.ContainsFileDropList()
-                        ? Clipboard.GetFileDropList() : new System.Collections.Specialized.StringCollection();
+                    SetClipboardText(secondText); PasteFirmware(path);
+                    if (path.Text != second) continue;
+                    SetClipboardFiles(files);
+                    PasteFirmware(path);
+                    if (path.Text == second && HistoryContains(history, beforeMultipleError.Length, multipleMessage)) break;
+                }
+                if (path.Text != second || !HistoryContains(history, beforeMultipleError.Length, multipleMessage))
+                {
+                    System.Collections.Specialized.StringCollection actual = ClipboardFiles();
                     bool clipboardMatches = actual.Count == 2 && actual[0] == first && actual[1] == second;
                     throw new Exception("Pasting multiple files must report an error without replacing " + type +
                         "; preserved=" + (path.Text == second) + ", errorRecorded=" +
-                        history.Text.Substring(beforeMultipleError.Length).Contains(multipleMessage) +
+                        HistoryContains(history, beforeMultipleError.Length, multipleMessage) +
                         ", clipboardMatches=" + clipboardMatches);
                 }
                 Find<Button>(form, "Clear_" + type).PerformClick();
@@ -132,16 +245,32 @@ internal static class GuiSmokeTests
         finally
         {
             bool unchanged = false;
-            if (expectedFiles != null && Clipboard.ContainsFileDropList())
+            if (expectedFiles != null)
             {
-                System.Collections.Specialized.StringCollection current = Clipboard.GetFileDropList();
+                System.Collections.Specialized.StringCollection current = ClipboardRetry(delegate
+                {
+                    return Clipboard.ContainsFileDropList()
+                        ? Clipboard.GetFileDropList() : new System.Collections.Specialized.StringCollection();
+                });
                 unchanged = current.Count == expectedFiles.Length;
                 for (int i = 0; unchanged && i < current.Count; i++) unchanged = current[i] == expectedFiles[i];
             }
-            else if (expectedText != null && Clipboard.ContainsText()) unchanged = Clipboard.GetText() == expectedText;
+            else if (expectedText != null)
+            {
+                string currentText = ClipboardRetry(delegate
+                {
+                    return Clipboard.ContainsText() ? Clipboard.GetText() : null;
+                });
+                unchanged = currentText == expectedText;
+            }
             if (unchanged)
             {
-                if (previous == null) Clipboard.Clear(); else Clipboard.SetDataObject(previous, true);
+                // Restoring the caller's clipboard is best-effort; a transient
+                // system lock here must not mask the assertions above.
+                TryClipboardRetry(delegate
+                {
+                    if (previous == null) Clipboard.Clear(); else Clipboard.SetDataObject(previous, true);
+                });
             }
         }
     }
@@ -237,8 +366,14 @@ internal static class GuiSmokeTests
                 resultCard.DrawToBitmap(picture, new Rectangle(Point.Empty, resultCard.Size));
                 picture.Save(Path.Combine(workDir, "ftp-download-address.png"), System.Drawing.Imaging.ImageFormat.Png);
             }
-            copy.PerformClick(); Application.DoEvents();
-            if (Clipboard.GetText() != expected || status.Text.Contains("fake.with.dot"))
+            string copiedAddress = null;
+            for (int attempt = 0; attempt < 10 && copiedAddress != expected; attempt++)
+            {
+                copy.PerformClick(); Application.DoEvents();
+                copiedAddress = ClipboardRetry(delegate { return Clipboard.GetText(); });
+                if (copiedAddress != expected) Thread.Sleep(50);
+            }
+            if (copiedAddress != expected || status.Text.Contains("fake.with.dot"))
                 throw new Exception("Copy must use the full address without leaking the password to operation history");
         }
         using (FtpTests.Server server = new FtpTests.Server("test-user", "fake.with.dot", 451))
