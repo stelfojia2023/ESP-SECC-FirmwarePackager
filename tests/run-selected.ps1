@@ -115,9 +115,9 @@ try {
         $directory = Join-Path $EvidenceDirectory 'ReleaseFtpDirectoryTests.exe'
         $icon = Join-Path $EvidenceDirectory 'IconPreservationTests.exe'
         $localUi = Join-Path $EvidenceDirectory 'LocalUpgradeUiTests.exe'
-        & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:GuiSmokeTests "/win32icon:$(Join-Path $root 'assets\linchr-mascot.ico')" "/out:$gui" $sources (Join-Path $root 'tests\FtpTests.cs') (Join-Path $root 'tests\GuiSmokeTests.cs')
+        & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /main:GuiSmokeTests "/win32icon:$(Join-Path $root 'assets\linchr-mascot.ico')" "/out:$gui" $sources (Join-Path $root 'tests\FtpTests.cs') (Join-Path $root 'tests\TestSupport.cs') (Join-Path $root 'tests\GuiSmokeTests.cs')
         if ($LASTEXITCODE -ne 0) { throw 'Desktop GUI test compilation failed.' }
-        & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$release" $core (Join-Path $root 'tests\ReleaseUiTests.cs')
+        & $csc /nologo /codepage:65001 /target:exe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$release" $core (Join-Path $root 'tests\TestSupport.cs') (Join-Path $root 'tests\ReleaseUiTests.cs')
         if ($LASTEXITCODE -ne 0) { throw 'Native release test compilation failed.' }
         & $csc /nologo /codepage:65001 /target:exe /platform:x64 /main:ReleaseFtpDirectoryTests "/out:$directory" $core $ftp (Join-Path $root 'tests\FtpTests.cs') (Join-Path $root 'tests\ReleaseFtpDirectoryTests.cs')
         if ($LASTEXITCODE -ne 0) { throw 'Desktop FTP test compilation failed.' }

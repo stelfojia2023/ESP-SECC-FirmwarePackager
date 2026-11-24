@@ -6,8 +6,8 @@ using System.Media;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-[assembly: System.Reflection.AssemblyVersion("0.0.12.0")]
-[assembly: System.Reflection.AssemblyFileVersion("0.0.12.0")]
+[assembly: System.Reflection.AssemblyVersion("0.0.13.0")]
+[assembly: System.Reflection.AssemblyFileVersion("0.0.13.0")]
 
 namespace SeccFirmwarePackager
 {

@@ -435,55 +435,15 @@ internal static class ReleaseUiTests
         if (!started || effect != DragDropEffects.Copy) throw new Exception("Native file drag was not accepted by the application.");
     }
 
-    private const int ClipboardCannotOpen = unchecked((int)0x800401D0);
-
-    // The shell can briefly lock the clipboard while rendering a file-drop
-    // list; retry only that transient failure.
-    private static void ClipboardRetry(Action action)
-    {
-        for (int attempt = 0; ; attempt++)
-        {
-            try { action(); return; }
-            catch (ExternalException ex)
-            {
-                if (attempt >= 99 || ex.HResult != ClipboardCannotOpen) throw;
-                Thread.Sleep(100);
-            }
-        }
-    }
-
-    private static T ClipboardRetry<T>(Func<T> action)
-    {
-        for (int attempt = 0; ; attempt++)
-        {
-            try { return action(); }
-            catch (ExternalException ex)
-            {
-                if (attempt >= 99 || ex.HResult != ClipboardCannotOpen) throw;
-                Thread.Sleep(100);
-            }
-        }
-    }
-
-    private static bool TryClipboardRetry(Action action)
-    {
-        try { ClipboardRetry(action); return true; }
-        catch (ExternalException ex)
-        {
-            if (ex.HResult == ClipboardCannotOpen) return false;
-            throw;
-        }
-    }
-
     private static void PasteCopiedFile(IntPtr root, IntPtr target, string path)
     {
-        IDataObject previous = ClipboardRetry(delegate { return Clipboard.GetDataObject(); });
+        IDataObject previous = TestSupport.ClipboardRetry(delegate { return Clipboard.GetDataObject(); });
         PointNative oldCursor; GetCursorPos(out oldCursor);
         try
         {
             System.Collections.Specialized.StringCollection files = new System.Collections.Specialized.StringCollection();
             files.Add(path);
-            ClipboardRetry(delegate { Clipboard.SetFileDropList(files); });
+            TestSupport.ClipboardRetry(delegate { Clipboard.SetFileDropList(files); });
             Rect bounds;
             if (!GetWindowRect(target, out bounds)) throw new Exception("Cannot locate the clipboard input target.");
             FocusWindow(root);
@@ -509,7 +469,7 @@ internal static class ReleaseUiTests
         {
             try
             {
-                System.Collections.Specialized.StringCollection current = ClipboardRetry(delegate
+                System.Collections.Specialized.StringCollection current = TestSupport.ClipboardRetry(delegate
                 {
                     return Clipboard.ContainsFileDropList()
                         ? Clipboard.GetFileDropList() : new System.Collections.Specialized.StringCollection();
@@ -517,7 +477,7 @@ internal static class ReleaseUiTests
                 if (current.Count == 1 && current[0] == path)
                 {
                     // Restoring the caller's clipboard is best-effort.
-                    TryClipboardRetry(delegate
+                    TestSupport.TryClipboardRetry(delegate
                     {
                         if (previous == null) Clipboard.Clear(); else Clipboard.SetDataObject(previous, true);
                     });
@@ -548,7 +508,7 @@ internal static class ReleaseUiTests
             // swatch clicks fail while another window still owns activation.
             Thread.Sleep(3000);
             process.Refresh();
-            if (!process.MainWindowTitle.Contains("V0.0.12")) throw new Exception("Release window version is incorrect.");
+            if (!process.MainWindowTitle.Contains("V0.0.13")) throw new Exception("Release window version is incorrect.");
             IntPtr root = process.MainWindowHandle;
             uint id = (uint)process.Id;
             string settings = Environment.GetEnvironmentVariable("SECC_PACKAGER_SETTINGS_DIR");

@@ -66,49 +66,9 @@ internal static class GuiSmokeTests
         return current.Length >= from && current.Substring(from).Contains(text);
     }
 
-    private const int ClipboardCannotOpen = unchecked((int)0x800401D0);
-
-    // Windows can briefly refuse OpenClipboard while the shell renders the
-    // previous file-drop list. Retry only that transient failure.
-    private static void ClipboardRetry(Action action)
-    {
-        for (int attempt = 0; ; attempt++)
-        {
-            try { action(); return; }
-            catch (ExternalException ex)
-            {
-                if (attempt >= 99 || ex.HResult != ClipboardCannotOpen) throw;
-                Thread.Sleep(100);
-            }
-        }
-    }
-
-    private static T ClipboardRetry<T>(Func<T> action)
-    {
-        for (int attempt = 0; ; attempt++)
-        {
-            try { return action(); }
-            catch (ExternalException ex)
-            {
-                if (attempt >= 99 || ex.HResult != ClipboardCannotOpen) throw;
-                Thread.Sleep(100);
-            }
-        }
-    }
-
-    private static bool TryClipboardRetry(Action action)
-    {
-        try { ClipboardRetry(action); return true; }
-        catch (ExternalException ex)
-        {
-            if (ex.HResult == ClipboardCannotOpen) return false;
-            throw;
-        }
-    }
-
     private static System.Collections.Specialized.StringCollection ClipboardFiles()
     {
-        return ClipboardRetry(delegate
+        return TestSupport.ClipboardRetry(delegate
         {
             return Clipboard.ContainsFileDropList()
                 ? Clipboard.GetFileDropList() : new System.Collections.Specialized.StringCollection();
@@ -119,7 +79,7 @@ internal static class GuiSmokeTests
     {
         for (int attempt = 0; attempt < 20; attempt++)
         {
-            ClipboardRetry(delegate { Clipboard.SetFileDropList(files); });
+            TestSupport.ClipboardRetry(delegate { Clipboard.SetFileDropList(files); });
             System.Collections.Specialized.StringCollection actual = ClipboardFiles();
             bool same = actual.Count == files.Count;
             for (int i = 0; same && i < actual.Count; i++) same = actual[i] == files[i];
@@ -133,8 +93,8 @@ internal static class GuiSmokeTests
     {
         for (int attempt = 0; attempt < 20; attempt++)
         {
-            ClipboardRetry(delegate { Clipboard.SetText(text); });
-            string actual = ClipboardRetry(delegate { return Clipboard.ContainsText() ? Clipboard.GetText() : null; });
+            TestSupport.ClipboardRetry(delegate { Clipboard.SetText(text); });
+            string actual = TestSupport.ClipboardRetry(delegate { return Clipboard.ContainsText() ? Clipboard.GetText() : null; });
             Thread.Sleep(50);
             if (actual == text) return;
         }
@@ -149,7 +109,7 @@ internal static class GuiSmokeTests
         int attempts = 0;
         string recovered = MainForm.ReadClipboardFirmwarePath(delegate { return ++attempts == 1 ? empty : ready; });
         if (attempts != 2 || recovered != delayedPath) throw new Exception("Transient empty clipboard data must be retried");
-        IDataObject previous = ClipboardRetry(delegate { return Clipboard.GetDataObject(); });
+        IDataObject previous = TestSupport.ClipboardRetry(delegate { return Clipboard.GetDataObject(); });
         string expectedText = null;
         string[] expectedFiles = null;
         try
@@ -180,7 +140,7 @@ internal static class GuiSmokeTests
                     throw new Exception("Pasting PLC .simage must retain its complete maya version");
                 if (path.Text != second)
                 {
-                    string currentText = ClipboardRetry(delegate
+                    string currentText = TestSupport.ClipboardRetry(delegate
                     {
                         return Clipboard.ContainsText() ? Clipboard.GetText() : null;
                     });
@@ -247,7 +207,7 @@ internal static class GuiSmokeTests
             bool unchanged = false;
             if (expectedFiles != null)
             {
-                System.Collections.Specialized.StringCollection current = ClipboardRetry(delegate
+                System.Collections.Specialized.StringCollection current = TestSupport.ClipboardRetry(delegate
                 {
                     return Clipboard.ContainsFileDropList()
                         ? Clipboard.GetFileDropList() : new System.Collections.Specialized.StringCollection();
@@ -257,7 +217,7 @@ internal static class GuiSmokeTests
             }
             else if (expectedText != null)
             {
-                string currentText = ClipboardRetry(delegate
+                string currentText = TestSupport.ClipboardRetry(delegate
                 {
                     return Clipboard.ContainsText() ? Clipboard.GetText() : null;
                 });
@@ -267,7 +227,7 @@ internal static class GuiSmokeTests
             {
                 // Restoring the caller's clipboard is best-effort; a transient
                 // system lock here must not mask the assertions above.
-                TryClipboardRetry(delegate
+                TestSupport.TryClipboardRetry(delegate
                 {
                     if (previous == null) Clipboard.Clear(); else Clipboard.SetDataObject(previous, true);
                 });
@@ -370,7 +330,7 @@ internal static class GuiSmokeTests
             for (int attempt = 0; attempt < 10 && copiedAddress != expected; attempt++)
             {
                 copy.PerformClick(); Application.DoEvents();
-                copiedAddress = ClipboardRetry(delegate { return Clipboard.GetText(); });
+                copiedAddress = TestSupport.ClipboardRetry(delegate { return Clipboard.GetText(); });
                 if (copiedAddress != expected) Thread.Sleep(50);
             }
             if (copiedAddress != expected || status.Text.Contains("fake.with.dot"))
@@ -510,7 +470,7 @@ internal static class GuiSmokeTests
                     {
                         string input = Path.Combine(workDir, "M4 固件 文件.bin");
                         string output = Path.Combine(workDir, "联合 固件 包.bin");
-                        if (!form.Text.Contains("V0.0.12")) throw new Exception("Tool version must be independent from package format V1");
+                        if (!form.Text.Contains("V0.0.13")) throw new Exception("Tool version must be independent from package format V1");
                         if (form.Controls.Find("FtpToggle", true).Length != 0 || form.Controls.Find("FtpDialog", true).Length != 0)
                             throw new Exception("FTP must be inline without toggle or dialog");
                         if (form.Controls.Find("BrandHeader", true).Length != 0) throw new Exception("Redundant brand banner must not be present");
