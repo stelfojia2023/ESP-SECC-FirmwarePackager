@@ -2,7 +2,7 @@
 
 将 PFC、LLC、M4、PLC、ESP32 中的 1～5 份固件打包成一个 BIN，支持查看包头和上传 FTP。
 
-源码版本：V0.0.12（发布构建）。
+源码版本：V0.0.13（开发构建）；最近发布版本：V0.0.12。
 
 [下载 V0.0.12 EXE](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/releases/download/v0.0.12/FirmwarePackager.exe) · [下载测试 BIN](https://github.com/stelfojia2023/ESP-SECC-FirmwarePackager/raw/refs/heads/main/test-vectors/five-test-bins.zip) · [文档目录](docs/README.md)
 
@@ -12,7 +12,7 @@
 
 1. 拖入或选择固件，检查名称和版本。
 2. 选择输出位置，点击“包生成”；生成后可查看包头。
-3. 如需上传，填写 FTP 信息并点击“上传到 FTP”；V0.0.12 成功后可复制设备下载地址，也可打开 FTP 目录查看文件名。
+3. 如需上传，填写 FTP 信息并点击“上传到 FTP”；上传成功后可复制设备下载地址，也可打开 FTP 目录查看文件名。
 
 顶部色圈可切换七种界面配色，首次使用默认银色。
 

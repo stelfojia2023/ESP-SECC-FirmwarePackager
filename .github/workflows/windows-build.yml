@@ -34,6 +34,10 @@ jobs:
           if ($LASTEXITCODE) { throw 'PR version or version consistency check failed' }
           python tests/test_check_version.py
           if ($LASTEXITCODE) { throw 'Version checker tests failed' }
+          python tests/check_release_ready.py
+          if ($LASTEXITCODE) { throw 'Release metadata check failed' }
+          python tests/test_check_release_ready.py
+          if ($LASTEXITCODE) { throw 'Release metadata checker tests failed' }
       - name: Run selected tests
         if: steps.scope.outputs.groups != ''
         shell: powershell

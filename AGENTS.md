@@ -10,6 +10,7 @@
 | 联合包字段、偏移与校验 | [V1 格式说明](docs/V1格式说明.md) |
 | 字体、配色与布局 | [字体规范](docs/字体规范.md)、[视觉规范](docs/视觉规范.md)、[七色配色规范](docs/七色配色规范.md) |
 | 测试范围、用例和命令 | [测试用例](docs/测试用例.md) |
+| 发布步骤、元数据校验和失败处理 | [发布流程](docs/发布流程.md) |
 | 交付给操作人员的说明 | [使用说明](docs/使用说明.md) |
 
 规格中“当前实现”“已确认目标”和“待确认”分别处理。V1 是候选包格式，包内偏移不是芯片烧录地址；本地和远程设备升级接口尚未接入。模拟 FTP 或软件测试不能证明真实服务器、平台或设备升级成功。
@@ -36,8 +37,8 @@
 - Windows 10/11 64 位使用系统 .NET Framework 4.x；运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1` 生成 `dist/FirmwarePackager.exe`。图标和声音已嵌入，单独 EXE 可运行；测试还需 Python 3.10 及以上。
 - 本地选测：`python .github/scripts/select_tests.py --base <基线提交>` 给出建议组；`powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-selected.ps1 -Groups <逗号分隔的组>` 执行。选测脚本含未提交和未跟踪文件；无法确定范围时运行全部自动组。
 - 涉及真实窗口、拖拽或 FTP 窗口交互时，在已解锁的 Windows 上对 `desktop` 组增加 `-RunDesktop`；图标比对还需 `-BaselineExe <基线EXE>`。GitHub CI 只编译桌面测试，未执行的交互测试须在 PR 中标明。
-- 文档检查：`python tests/check_docs.py`、`python tests/test_check_docs.py`；选测规则检查：`python tests/test_select_tests.py`；版本检查：`python tests/check_version.py --base <完整基线提交 SHA>`、`python tests/test_check_version.py`。
-- 发布前执行全部自动组及 `tests/run-tests.ps1`。后者需已解锁的 Windows 交互桌面，会打开窗口并操作鼠标；输出中的 `core results` 还需用 `tests/independent_verify.py` 独立核验。真实桌面回归由操作者完成并留证，GitHub CI 不自动核验该证据。合成 `test-vectors` 不可用于设备升级。
+- 文档检查：`python tests/check_docs.py`、`python tests/test_check_docs.py`；选测规则检查：`python tests/test_select_tests.py`；版本检查：`python tests/check_version.py --base <完整基线提交 SHA>`、`python tests/test_check_version.py`；发布元数据检查：`python tests/check_release_ready.py`、`python tests/test_check_release_ready.py`。
+- 发布前执行全部自动组及 `tests/run-tests.ps1`。后者需已解锁的 Windows 交互桌面，会打开窗口并操作鼠标；失败时用 `-Only <用例>` 定向重跑，WSL 可用 `bash tests/run-tests-from-wsl.sh`。输出中的 `core results` 还需用 `tests/independent_verify.py` 独立核验。完整步骤见[发布流程](docs/发布流程.md)。真实桌面回归由操作者完成并留证，GitHub CI 不自动核验该证据。合成 `test-vectors` 不可用于设备升级。
 - 一个版本内的准备、验证和修正提交可共用目标版本；README 说明当前版本及可取得的产物，验证记录只对实测版本负责，不改写旧结果。
 - `.github/release.json` 记录最近一次 Release 的版本与 EXE 摘要，不是工程版本权威来源；发布时须与目标版本和 EXE 一致。发布前核对源码提交、测试结果、EXE 版本及 SHA-256。
 - 主分支提交信息以 `Release v` 开头会触发自动发布；仅在用户明确要求发布、完成前述验证且发布元数据齐备时使用。已有 Release 资产不得被误认为新版本或擅自覆盖。
