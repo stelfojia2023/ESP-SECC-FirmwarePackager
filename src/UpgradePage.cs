@@ -21,9 +21,16 @@ namespace SeccFirmwarePackager
         private readonly Panel localSettings = new Panel();
         private readonly Panel remoteSettings = new Panel();
         private readonly Label status = new Label();
+        private readonly TableLayoutPanel transferStatus = CreateLayout(2);
+        private readonly ProgressBar transferProgress = new ProgressBar();
         private readonly Label lastTaskLabel = new Label();
+        private readonly SectionCard logCard = Card("UpgradeOperationLogCard");
+        private readonly TextBox operationLog = new TextBox();
         private readonly Button start = new RaisedButton();
         private readonly Button continueButton = new RaisedButton();
+        private readonly Button stopUpgrade = new RaisedButton();
+        private readonly Button readVersions = new RaisedButton();
+        private readonly FlowLayoutPanel localActions = new FlowLayoutPanel();
         private readonly Button browse = new RaisedButton();
         private readonly Button timeoutSettings = new RaisedButton();
         private readonly TextBox localIp = NewInput("LocalDeviceIp", "填写设备 IP 地址", false);
@@ -32,6 +39,9 @@ namespace SeccFirmwarePackager
         private readonly TableLayoutPanel packageBody;
         private readonly TableLayoutPanel settingsBody;
         private readonly TableLayoutPanel resultBody;
+        private readonly TableLayoutPanel upgradeActions = new TableLayoutPanel();
+        private readonly Label stopHint = FieldLabel("协议未接入");
+        private bool showingTransferProgress;
         private bool remote;
         private bool candidateValid;
         private int selectionRevision;
@@ -64,17 +74,23 @@ namespace SeccFirmwarePackager
             public IList<LupVersion> Before;
             public IList<LupVersion> Latest;
             public int CandidateRevision;
+            public bool ReceiptUnconfirmed;
+            public bool Ended;
+            public string VersionResult = "版本待核对";
+            public string LastVersionLog;
+            public string Endpoint { get { return new IPEndPoint(Address, Port).ToString(); } }
         }
 
         public UpgradePage()
         {
             Name = "UpgradePage"; Dock = DockStyle.Top; AutoSize = true; BackColor = UiColors.Canvas;
             Padding = new Padding(18, 4, 18, 14); Margin = Padding.Empty;
-            ColumnCount = 1; RowCount = 3;
+            ColumnCount = 1; RowCount = 4;
             ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             RowStyles.Add(new RowStyle(SizeType.Absolute, 120));
             RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
             RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
+            RowStyles.Add(new RowStyle(SizeType.Absolute, 142));
 
             SectionCard packageCard = Card("UpgradePackageCard");
             packageBody = CreateLayout(3);
@@ -155,26 +171,63 @@ namespace SeccFirmwarePackager
             settingsCard.Controls.Add(settingsBody); Controls.Add(settingsCard, 0, 1);
 
             SectionCard resultCard = Card("UpgradeResultCard");
-            resultBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = Padding.Empty, BackColor = Color.Transparent };
+            resultBody = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, Margin = Padding.Empty, BackColor = Color.Transparent };
             resultBody.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); resultBody.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 186));
             resultBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 48)); resultBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
+            resultBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
             status.Name = "UpgradeStatus"; status.Dock = DockStyle.Fill; status.TextAlign = ContentAlignment.MiddleLeft;
             status.ForeColor = UiColors.Muted; status.AutoEllipsis = true; status.AccessibleName = "设备升级状态";
-            resultBody.Controls.Add(status, 0, 0);
+            transferStatus.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            transferStatus.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
+            transferStatus.Controls.Add(status, 0, 0);
+            transferProgress.Name = "UpgradeTransferProgress"; transferProgress.AccessibleName = "包传输进度";
+            transferProgress.Dock = DockStyle.Fill; transferProgress.Margin = new Padding(3, 0, 12, 3);
+            transferProgress.Style = ProgressBarStyle.Continuous; transferProgress.Visible = false;
+            transferStatus.Controls.Add(transferProgress, 0, 1);
+            resultBody.Controls.Add(transferStatus, 0, 0);
             start.Name = "StartUpgradeButton"; start.Text = "开始升级"; start.Enabled = false; start.Size = new Size(180, 40);
             start.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top; start.Margin = new Padding(3, 2, 3, 3);
             Style(start, true); start.Click += StartClicked;
-            resultBody.Controls.Add(start, 1, 0);
+            upgradeActions.Dock = DockStyle.Fill; upgradeActions.Margin = Padding.Empty;
+            upgradeActions.ColumnCount = 2; upgradeActions.RowCount = 2;
+            upgradeActions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 186));
+            upgradeActions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 186));
+            upgradeActions.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+            upgradeActions.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            upgradeActions.Controls.Add(start, 0, 0);
+            PrepareMode(stopUpgrade, "StopUpgradeButton", "停止升级");
+            stopUpgrade.Size = start.Size; stopUpgrade.Margin = start.Margin;
+            stopUpgrade.Anchor = start.Anchor; stopUpgrade.Enabled = false;
+            upgradeActions.Controls.Add(stopUpgrade, 1, 0);
+            stopHint.Name = "StopUpgradeHint"; stopHint.TextAlign = ContentAlignment.MiddleCenter;
+            upgradeActions.Controls.Add(stopHint, 1, 1);
+            resultBody.Controls.Add(upgradeActions, 1, 0);
             lastTaskLabel.Name = "UpgradeLastTask"; lastTaskLabel.Dock = DockStyle.Fill;
             lastTaskLabel.ForeColor = UiColors.Muted; lastTaskLabel.AutoEllipsis = true;
             lastTaskLabel.TextAlign = ContentAlignment.MiddleLeft;
             resultBody.Controls.Add(lastTaskLabel, 0, 1);
             continueButton.Name = "ContinueUpgradeButton"; continueButton.Text = "继续等待";
             continueButton.Size = new Size(180, 40); continueButton.Margin = new Padding(3, 2, 3, 3);
-            continueButton.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
+            continueButton.Anchor = AnchorStyles.Right | AnchorStyles.Top;
             Style(continueButton, false); continueButton.Click += ContinueClicked;
             resultBody.Controls.Add(continueButton, 1, 1);
+            localActions.Dock = DockStyle.Fill; localActions.Margin = Padding.Empty; localActions.WrapContents = false;
+            PrepareMode(readVersions, "ReadFirmwareVersionsButton", "读取固件版本");
+            readVersions.Size = new Size(180, 40); readVersions.Click += ReadFirmwareVersionsClicked;
+            localActions.Controls.Add(readVersions);
+            resultBody.Controls.Add(localActions, 0, 2); resultBody.SetColumnSpan(localActions, 2);
             resultCard.Controls.Add(resultBody); Controls.Add(resultCard, 0, 2);
+
+            TableLayoutPanel logBody = CreateLayout(2);
+            logBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            logBody.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            logBody.Controls.Add(Title("升级日志"), 0, 0);
+            operationLog.Name = "UpgradeOperationLog"; operationLog.AccessibleName = "升级日志";
+            operationLog.Dock = DockStyle.Fill; operationLog.Multiline = true; operationLog.ReadOnly = true;
+            operationLog.ScrollBars = ScrollBars.Vertical; operationLog.BackColor = UiColors.Field;
+            operationLog.ForeColor = UiColors.Ink;
+            logBody.Controls.Add(operationLog, 0, 1);
+            logCard.Controls.Add(logBody); Controls.Add(logCard, 0, 3);
             SetMode(false);
         }
 
@@ -272,6 +325,15 @@ namespace SeccFirmwarePackager
         {
             this.remote = remote;
             localSettings.Visible = !remote; remoteSettings.Visible = remote;
+            localActions.Visible = !remote;
+            stopUpgrade.Visible = !remote;
+            stopHint.Visible = !remote;
+            resultBody.ColumnStyles[1].Width = remote ? 186 : 372;
+            resultBody.RowStyles[0].Height = remote ? 48 : 64;
+            upgradeActions.ColumnStyles[1].Width = remote ? 0 : 186;
+            UpdateTransferProgressVisibility();
+            logCard.Visible = !remote;
+            RowStyles[3].Height = remote ? 0 : 142;
             localMode.BackColor = remote ? UiColors.ButtonSecondary : UiColors.ButtonPrimary;
             remoteMode.BackColor = remote ? UiColors.ButtonPrimary : UiColors.ButtonSecondary;
             settingsBody.RowStyles[1].Height = remote ? 96 : 32;
@@ -286,6 +348,7 @@ namespace SeccFirmwarePackager
         private void UpdateStart()
         {
             start.Enabled = !remote && candidateValid && !busy;
+            readVersions.Enabled = !remote && !busy;
             UpdateResumeLayout();
         }
 
@@ -298,14 +361,16 @@ namespace SeccFirmwarePackager
             continueButton.Visible = show && canResume;
             continueButton.Enabled = show && canResume && !busy;
             resultBody.RowStyles[1].Height = show ? 48 : 0;
-            RowStyles[2].Height = show ? 120 : 72;
+            resultBody.RowStyles[2].Height = remote ? 0 : 48;
+            RowStyles[2].Height = (show ? 120 : 72) + (remote ? 0 : 64);
             if (show)
             {
-                lastTaskLabel.Text = (canResume ? "可继续等待：" : "最近任务：") + Path.GetFileName(lastTask.Snapshot.Path);
+                lastTaskLabel.Text = (canResume ? "可继续等待：" : "最近任务：") + lastTask.Endpoint +
+                    " " + Path.GetFileName(lastTask.Snapshot.Path);
                 if (selectionRevision != lastTask.CandidateRevision &&
                     String.Equals(packagePath.Text, lastTask.Snapshot.Path, StringComparison.OrdinalIgnoreCase))
                     lastTaskLabel.Text += "（路径已用于新包）";
-                StringBuilder details = new StringBuilder("任务包：" + lastTask.Snapshot.Path);
+                StringBuilder details = new StringBuilder("设备：" + lastTask.Endpoint + "\r\n任务包：" + lastTask.Snapshot.Path);
                 for (int i = 0; i < lastTask.Snapshot.Report.Entries.Count; i++)
                 {
                     FirmwareEntry entry = lastTask.Snapshot.Report.Entries[i];
@@ -367,13 +432,18 @@ namespace SeccFirmwarePackager
         {
             busy = false;
             transferActive = false;
+            showingTransferProgress = false;
+            UpdateTransferProgressVisibility();
             packagePath.Enabled = true;
             browse.Enabled = true;
             localIp.Enabled = true;
             localPort.Enabled = true;
             timeoutSettings.Enabled = true;
-            SetLocalStatus(message, error);
-            ReportResult(message, error);
+            if (message != null)
+            {
+                SetLocalStatus(message, error);
+                ReportResult(message, error);
+            }
             if (!String.IsNullOrEmpty(pendingGeneratedPath))
             {
                 string next = pendingGeneratedPath;
@@ -395,8 +465,27 @@ namespace SeccFirmwarePackager
             }
         }
 
+        private void UpdateTransferProgressVisibility()
+        {
+            bool show = showingTransferProgress && !remote;
+            transferStatus.RowStyles[1].Height = show ? 16 : 0;
+            transferProgress.Visible = show;
+        }
+
+        private void SetTransferProgress(int percent)
+        {
+            showingTransferProgress = true;
+            transferProgress.Value = percent;
+            UpdateTransferProgressVisibility();
+            SetLocalStatus("包传输进度：" + percent + "%", false);
+        }
+
         private void ReportResult(string message, bool error)
         {
+            operationLog.AppendText("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) + "] " +
+                message.Replace("\r\n", "；").Replace("\n", "；").TrimEnd('\r') + Environment.NewLine);
+            operationLog.SelectionStart = operationLog.TextLength;
+            operationLog.ScrollToCaret();
             Action<string, bool> handler = ResultReported;
             if (handler != null) handler(message, error);
         }
@@ -405,6 +494,77 @@ namespace SeccFirmwarePackager
         {
             return version.Status == 0 ? version.Value :
                 version.Status == 1 ? "未就绪" : version.Status == 2 ? "不支持查询" : "不可用";
+        }
+
+        private void LogVersionComparison(ObservedTask observed, IList<LupVersion> versions)
+        {
+            StringBuilder text = new StringBuilder("运行版本对比：");
+            for (int i = 0; i < versions.Count; i++)
+            {
+                if (i != 0) text.Append("；");
+                FirmwareEntry entry = observed.Snapshot.Report.Entries[i];
+                LupVersion current = versions[i];
+                text.Append(entry.Type).Append(" 升级前：").Append(VersionText(observed.Before[i]))
+                    .Append(" / 目标：").Append(entry.Version).Append(" / 当前：").Append(VersionText(current));
+                if (current.Status == 0)
+                    text.Append(String.Equals(current.Value, entry.Version, StringComparison.Ordinal) ? "（一致）" : "（不一致）");
+            }
+            string message = text.ToString();
+            if (observed.LastVersionLog == message) return;
+            observed.LastVersionLog = message;
+            ReportResult(message, false);
+        }
+
+        private void ReadFirmwareVersionsClicked(object sender, EventArgs e)
+        {
+            if (busy || remote) return;
+            IPAddress address;
+            int port;
+            if (!IPAddress.TryParse(localIp.Text.Trim(), out address) ||
+                !Int32.TryParse(localPort.Text.Trim(), out port) || port < 1 || port > 65535)
+            {
+                MessageBox.Show(FindForm(), "请输入有效的设备 IP 和端口。", "读取固件版本",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            string endpoint = new IPEndPoint(address, port).ToString();
+            int timeout = connectTimeoutMs;
+            busy = true;
+            packagePath.Enabled = false; browse.Enabled = false;
+            localIp.Enabled = false; localPort.Enabled = false; timeoutSettings.Enabled = false;
+            readVersions.Text = "正在读取…";
+            UpdateStart();
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                Lup1Connection connection = null;
+                StringBuilder result = new StringBuilder("设备：" + endpoint);
+                bool error = false;
+                try
+                {
+                    FirmwareEntry[] targets = {
+                        new FirmwareEntry { Type = FirmwareType.PFC }, new FirmwareEntry { Type = FirmwareType.LLC },
+                        new FirmwareEntry { Type = FirmwareType.M4 }, new FirmwareEntry { Type = FirmwareType.PLC },
+                        new FirmwareEntry { Type = FirmwareType.ESP32 }
+                    };
+                    connection = Connect(address, port, timeout);
+                    foreach (LupVersion version in connection.QueryVersions(targets, timeout))
+                        result.Append("\r\n").Append(version.Type).Append("：").Append(VersionText(version));
+                }
+                catch (Exception ex)
+                {
+                    error = true;
+                    result.Append("\r\n读取固件版本失败：").Append(ex.Message);
+                }
+                finally { CloseConnection(connection); }
+                PostToUi(delegate
+                {
+                    readVersions.Text = "读取固件版本";
+                    Finish(null, false);
+                    ReportResult("读取固件版本：" + result, error);
+                    MessageBox.Show(FindForm(), result.ToString(), "读取固件版本", MessageBoxButtons.OK,
+                        error ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+                });
+            });
         }
 
         private void DisplayVersions(PackageReport report, IList<LupVersion> versions, IList<LupVersion> before)
@@ -480,23 +640,35 @@ namespace SeccFirmwarePackager
                             });
                             return;
                         }
+                        if (state == 3) observed.Ended = true;
+                        if (observed.ReceiptUnconfirmed && state >= 1 && state <= 3)
+                        {
+                            observed.ReceiptUnconfirmed = false;
+                            ReportAccepted();
+                        }
                         List<LupVersion> versions = ReadVersions(connection, snapshot.Report,
                             RemainingQueryTimeout(wait, waitMs, queryTimeoutMs));
-                        bool matched = true, unsupported = false;
+                        bool matched = true, unsupported = false, mismatch = false;
                         for (int i = 0; i < versions.Count; i++)
                         {
                             if (versions[i].Status == 2) unsupported = true;
+                            if (versions[i].Status == 0 &&
+                                !String.Equals(versions[i].Value, snapshot.Report.Entries[i].Version, StringComparison.Ordinal))
+                                mismatch = true;
                             if (versions[i].Status != 0 ||
                                 !String.Equals(versions[i].Value, snapshot.Report.Entries[i].Version, StringComparison.Ordinal))
                                 matched = false;
                         }
-                        string phase = state == 0 ? "设备接收中" : state == 1 ? "设备等待安装" :
-                            state == 2 ? "设备安装中" : state == 3 ? "设备任务已结束" : "设备任务状态未知";
-                        string result = matched ? "版本核对通过" : unsupported ? "部分目标不支持版本查询" : "版本待核对";
+                        string phase = observed.Ended ? "设备任务已结束" : state == 0 ? "设备接收中" :
+                            state == 1 ? "设备等待安装" : state == 2 ? "设备安装中" : "设备任务状态未知";
+                        string result = matched ? "版本核对通过" : unsupported ? "部分目标不支持版本查询" :
+                            observed.Ended && mismatch ? "版本不一致" : "版本待核对";
+                        if (observed.Ended) observed.VersionResult = result;
                         string description = phase + "，" + result + "。" +
-                            (matched ? "版本一致不能证明本次重新写入或由本任务导致。" : "");
-                        bool unknownMatched = state == 255 && matched;
-                        bool complete = matched && (state == 3 || unknownMatched);
+                            (matched ? "版本一致不能证明本次重新写入或由本任务导致。" : "") +
+                            (observed.ReceiptUnconfirmed ? "本次任务结果未确认。" : "");
+                        bool unknownMatched = !observed.Ended && state == 255 && matched;
+                        bool complete = matched && (state == 3 || state == 255);
                         if (complete)
                         {
                             CloseConnection(connection);
@@ -505,6 +677,7 @@ namespace SeccFirmwarePackager
                         PostToUi(delegate
                         {
                             observed.Latest = versions;
+                            LogVersionComparison(observed, versions);
                             if (selectionRevision == observed.CandidateRevision)
                                 DisplayVersions(snapshot.Report, versions, observed.Before);
                             UpdateResumeLayout();
@@ -533,6 +706,8 @@ namespace SeccFirmwarePackager
                         connection = null;
                         if (wait.ElapsedMilliseconds >= waitMs) break;
                         string message = "设备暂不可达或应答无效，等待重新查询：" + ex.Message;
+                        if (observed.Ended)
+                            message = "设备任务已结束，" + observed.VersionResult + "；" + message;
                         PostToUi(delegate
                         {
                             SetLocalStatus(message, true);
@@ -548,7 +723,18 @@ namespace SeccFirmwarePackager
                 PostToUi(delegate
                 {
                     lastTask = observed; canResume = true;
-                    Finish("等待超时；设备可能仍在等待或执行安装。", false);
+                    Finish(observed.Ended ? "等待超时；设备任务已结束，" + observed.VersionResult + "。" :
+                        observed.ReceiptUnconfirmed ? "等待超时；结束应答未确认，本次任务结果未确认。" :
+                        "等待超时；设备可能仍在等待或执行安装。", false);
+                });
+            }
+            catch (Exception ex)
+            {
+                if (!observed.Ended) throw;
+                PostToUi(delegate
+                {
+                    lastTask = observed; canResume = true;
+                    Finish("设备任务已结束，" + observed.VersionResult + "；查询失败：" + ex.Message, true);
                 });
             }
             finally { CloseConnection(connection); }
@@ -559,8 +745,20 @@ namespace SeccFirmwarePackager
             PostToUi(delegate
             {
                 transferActive = false;
+                showingTransferProgress = false;
+                UpdateTransferProgressVisibility();
                 SetLocalStatus("设备已接收并校验，安装状态尚未确认。", false);
                 ReportResult("设备已接收并校验，安装状态尚未确认。", false);
+            });
+        }
+
+        private void KeepUnconfirmedEnd(ObservedTask observed, string reason)
+        {
+            observed.ReceiptUnconfirmed = true;
+            PostToUi(delegate
+            {
+                lastTask = observed; canResume = true;
+                Finish("结束应答未确认：" + reason + "；本次任务结果未确认，可继续等待。", true);
             });
         }
 
@@ -573,8 +771,8 @@ namespace SeccFirmwarePackager
             packagePath.Enabled = false; browse.Enabled = false;
             localIp.Enabled = false; localPort.Enabled = false; timeoutSettings.Enabled = false;
             lastObservedStatus = null;
-            SetLocalStatus("继续等待：" + Path.GetFileName(observed.Snapshot.Path), false);
-            ReportResult("继续等待：" + observed.Snapshot.Path, false);
+            SetLocalStatus("继续等待：" + observed.Endpoint + " " + Path.GetFileName(observed.Snapshot.Path), false);
+            ReportResult("继续等待：" + observed.Endpoint + " " + observed.Snapshot.Path, false);
             UpdateStart();
             ThreadPool.QueueUserWorkItem(delegate
             {
@@ -598,6 +796,7 @@ namespace SeccFirmwarePackager
                 return;
             }
             string path = packagePath.Text;
+            string endpoint = new IPEndPoint(address, port).ToString();
             int taskCandidateRevision = selectionRevision;
             int queryTimeout = connectTimeoutMs, blockTimeout = blockTimeoutMs;
             int operationTimeout = operationTimeoutMs, waitTimeout = waitTimeoutMs;
@@ -633,7 +832,7 @@ namespace SeccFirmwarePackager
                                  Encoding.UTF8.GetByteCount(entry.Version) >= 15))
                                 details.AppendLine("当前设备对 PLC 版本格式或查询长度有限制，请确认是否继续。");
                         }
-                        string message = "将发送以下联合包：\r\n" + snapshot.Path + "\r\n" + details +
+                        string message = "目标设备：" + endpoint + "\r\n将发送以下联合包：\r\n" + snapshot.Path + "\r\n" + details +
                             "\r\n设备已有等待安装的旧包可能被新任务替换，即使新传输失败也可能不再安装。" +
                             "\r\n云端下载可能使设备暂时无响应；超时后请稍后人工重试。确定继续？";
                         packageApproved = MessageBox.Show(FindForm(), message, "确认本地升级", MessageBoxButtons.YesNo,
@@ -645,6 +844,7 @@ namespace SeccFirmwarePackager
                     PostToUi(delegate { SetLocalStatus("正在查询设备状态和升级前版本。", false); });
                     using (Lup1Connection connection = Connect(address, port, queryTimeout))
                     {
+                        PostToUi(delegate { ReportResult("TCP 已连接：" + endpoint, false); });
                         byte deviceStatus = connection.QueryStatus(queryTimeout);
                         if (deviceStatus == 1) throw new InvalidDataException("设备已插枪，请先拔枪。");
                         if (deviceStatus == 2) throw new InvalidDataException("设备状态未知，不能发送升级包。");
@@ -660,7 +860,7 @@ namespace SeccFirmwarePackager
                                 FirmwareEntry entry = snapshot.Report.Entries[i];
                                 details.AppendLine(entry.Type + "  目标：" + entry.Version + "  升级前：" + VersionText(before[i]));
                             }
-                            string message = "设备升级前版本：\r\n" + details +
+                            string message = "目标设备：" + endpoint + "\r\n设备升级前版本：\r\n" + details +
                                 "\r\n升级前版本相同或未知时，版本一致不能证明本次重新写入。确定发送？";
                             approved = MessageBox.Show(FindForm(), message, "确认设备版本", MessageBoxButtons.YesNo,
                                 MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
@@ -683,28 +883,35 @@ namespace SeccFirmwarePackager
                             canResume = false;
                             lastObservedStatus = null;
                             UpdateResumeLayout();
+                            ReportResult("设备已受理升级：" + endpoint, false);
+                            SetTransferProgress(0);
+                            ReportResult("包传输进度：0%", false);
                         });
                         ObservedTask observed = new ObservedTask
                         {
                             Address = address, Port = port, Snapshot = snapshot, Task = task,
                             Before = before, CandidateRevision = taskCandidateRevision
                         };
+                        int lastProgressBucket = 0;
                         for (int offset = 0; offset < snapshot.Length;)
                         {
                             int length = Math.Min(4096, snapshot.Length - offset);
                             connection.SendBlock(task, offset, snapshot.ReadBlock(offset, length), blockTimeout);
                             offset += length;
-                            int confirmed = offset;
+                            int percent = offset * 100 / snapshot.Length;
+                            bool milestone = percent / 10 > lastProgressBucket;
+                            lastProgressBucket = percent / 10;
                             PostToUi(delegate
                             {
-                                SetLocalStatus(String.Format("已确认 {0:N0} / {1:N0} 字节（{2}%）",
-                                    confirmed, snapshot.Length, confirmed * 100 / snapshot.Length), false);
+                                SetTransferProgress(percent);
+                                if (milestone)
+                                    ReportResult("包传输进度：" + percent + "%", false);
                             });
                         }
                         try { connection.EndPackage(task, operationTimeout); }
                         catch (LupDeviceException) { throw; }
                         catch (InvalidDataException) { throw; }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
                             CloseConnection(connection);
                             if (shuttingDown) return;
@@ -718,7 +925,8 @@ namespace SeccFirmwarePackager
                             catch (Exception recoveryError)
                             {
                                 CloseConnection(recovery);
-                                throw new IOException("结束应答未确认：" + recoveryError.Message, ex);
+                                KeepUnconfirmedEnd(observed, recoveryError.Message);
+                                return;
                             }
                             using (recovery)
                             {
@@ -729,7 +937,11 @@ namespace SeccFirmwarePackager
                                     return;
                                 }
                                 if (recovered == 0)
-                                    throw new IOException("结束应答未确认：设备仍在接收，无法确认校验结果。", ex);
+                                {
+                                    CloseConnection(recovery);
+                                    KeepUnconfirmedEnd(observed, "设备仍在接收，无法确认校验结果");
+                                    return;
+                                }
                                 ReportAccepted();
                                 ObserveTask(observed, recovery, recovered, queryTimeout, waitTimeout);
                             }
