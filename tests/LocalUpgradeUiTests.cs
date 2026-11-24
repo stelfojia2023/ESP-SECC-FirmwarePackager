@@ -139,8 +139,9 @@ internal static class LocalUpgradeUiTests
         TcpListener server = new TcpListener(IPAddress.Loopback, 0);
         server.Start();
         IPEndPoint endpoint = (IPEndPoint)server.LocalEndpoint;
-        string failure = null, report = null;
-        int dialogClosed = 0;
+        string failure = null;
+        TextBox operationLog = Find<TextBox>(form, "UpgradeOperationLog");
+        string oldLog = operationLog.Text;
         Thread peer = new Thread(delegate()
         {
             try
@@ -161,41 +162,21 @@ internal static class LocalUpgradeUiTests
             }
             catch (Exception e) { failure = e.Message; }
         });
-        Thread dismiss = new Thread(delegate()
-        {
-            DateTime until = DateTime.UtcNow.AddSeconds(10);
-            while (DateTime.UtcNow < until)
-            {
-                IntPtr dialog = FindWindow(null, "读取固件版本");
-                uint pid;
-                if (dialog != IntPtr.Zero && GetWindowThreadProcessId(dialog, out pid) != 0 &&
-                    pid == (uint)System.Diagnostics.Process.GetCurrentProcess().Id)
-                {
-                    IntPtr ok = GetDlgItem(dialog, 1);
-                    if (ok != IntPtr.Zero)
-                    {
-                        System.Text.StringBuilder message = new System.Text.StringBuilder(4096);
-                        GetWindowText(GetDlgItem(dialog, 65535), message, message.Capacity);
-                        report = message.ToString();
-                        SendMessage(ok, 0x00F5, IntPtr.Zero, IntPtr.Zero);
-                        Interlocked.Exchange(ref dialogClosed, 1);
-                        return;
-                    }
-                }
-                Thread.Sleep(20);
-            }
-        });
-        peer.IsBackground = true; dismiss.IsBackground = true;
+        peer.IsBackground = true;
         try
         {
             ip.Text = endpoint.Address.ToString(); portBox.Text = endpoint.Port.ToString();
-            peer.Start(); dismiss.Start();
+            peer.Start();
             read.PerformClick();
             if (read.Enabled || start.Enabled || stop.Enabled)
                 throw new Exception("The read must not allow concurrent read, start, or stop.");
-            WaitFor(delegate { return Interlocked.CompareExchange(ref dialogClosed, 0, 0) == 1 && read.Enabled; },
-                "The read-only version result did not appear.");
-            if (report == null || !report.Contains(endpoint.ToString()) || !report.Contains("PFC：V1") ||
+            WaitFor(delegate
+            {
+                string added = operationLog.Text.Substring(Math.Min(oldLog.Length, operationLog.Text.Length));
+                return read.Enabled && added.Contains("PFC：V1") && added.Contains("ESP32：V5");
+            }, "The read-only version result did not appear in the upgrade log.");
+            string report = operationLog.Text.Substring(Math.Min(oldLog.Length, operationLog.Text.Length));
+            if (!report.Contains(endpoint.ToString()) || !report.Contains("PFC：V1") ||
                 !report.Contains("LLC：未就绪") || !report.Contains("M4：不支持查询") ||
                 !report.Contains("PLC：不可用") || !report.Contains("ESP32：V5"))
                 throw new Exception("The version result did not distinguish all five firmware versions and states: " + report);

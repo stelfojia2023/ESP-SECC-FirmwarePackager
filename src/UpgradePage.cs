@@ -524,8 +524,7 @@ namespace SeccFirmwarePackager
             if (!IPAddress.TryParse(localIp.Text.Trim(), out address) ||
                 !Int32.TryParse(localPort.Text.Trim(), out port) || port < 1 || port > 65535)
             {
-                MessageBox.Show(FindForm(), "请输入有效的设备 IP 和端口。", "读取固件版本",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ReportResult("读取固件版本：请输入有效的设备 IP 和端口。", true);
                 return;
             }
             string endpoint = new IPEndPoint(address, port).ToString();
@@ -562,8 +561,6 @@ namespace SeccFirmwarePackager
                     readVersions.Text = "读取固件版本";
                     Finish(null, false);
                     ReportResult("读取固件版本：" + result, error);
-                    MessageBox.Show(FindForm(), result.ToString(), "读取固件版本", MessageBoxButtons.OK,
-                        error ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
                 });
             });
         }
