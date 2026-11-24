@@ -226,6 +226,20 @@ internal static class GuiSmokeTests
             WaitForStatus(status, "上传成功", beforeUpload);
             if (server.Uploaded == null || Convert.ToBase64String(server.Uploaded) != Convert.ToBase64String(File.ReadAllBytes(package)))
                 throw new Exception("FTP UI upload bytes mismatch");
+            TextBox download = Find<TextBox>(form, "FtpDownloadAddress");
+            Button copy = Find<Button>(form, "FtpCopyDownloadAddress");
+            string expected = "ftp://test-user:fake.with.dot@127.0.0.1:" + server.Port + "/upgrade/" + Path.GetFileName(package);
+            if (!download.Visible || !download.ReadOnly || download.Text != expected || !copy.Visible)
+                throw new Exception("Successful upload must show its complete device download address");
+            Control resultCard = Find<Control>(form, "OperationResultCard");
+            using (Bitmap picture = new Bitmap(resultCard.Width, resultCard.Height))
+            {
+                resultCard.DrawToBitmap(picture, new Rectangle(Point.Empty, resultCard.Size));
+                picture.Save(Path.Combine(workDir, "ftp-download-address.png"), System.Drawing.Imaging.ImageFormat.Png);
+            }
+            copy.PerformClick(); Application.DoEvents();
+            if (Clipboard.GetText() != expected || status.Text.Contains("fake.with.dot"))
+                throw new Exception("Copy must use the full address without leaking the password to operation history");
         }
         using (FtpTests.Server server = new FtpTests.Server("test-user", "fake.with.dot", 451))
         {
@@ -235,6 +249,18 @@ internal static class GuiSmokeTests
             WaitForStatus(status, "上传失败", beforeFailure);
             if (status.Text.IndexOf("451", beforeFailure, StringComparison.Ordinal) < 0 || status.Text.Contains("fake.with.dot"))
                 throw new Exception("FTP UI failure was not reported safely");
+            if (Find<TextBox>(form, "FtpDownloadAddress").Visible || Find<TextBox>(form, "FtpDownloadAddress").Text != "")
+                throw new Exception("Failed upload must not retain the previous success address");
+        }
+        using (FtpTests.Server server = new FtpTests.Server("test-user", "fake@secret", 226))
+        {
+            address.PasteAddress("ftp://test-user:fake%40secret@127.0.0.1:" + server.Port + "/upgrade");
+            int beforeUpload = status.TextLength;
+            start.Invoke(form, new object[] { package, address.Text, user.Text, password.Text });
+            WaitForStatus(status, "无法生成设备下载地址", beforeUpload);
+            if (status.Text.IndexOf("上传成功", beforeUpload, StringComparison.Ordinal) < 0 ||
+                status.Text.Contains("fake@secret") || Find<TextBox>(form, "FtpDownloadAddress").Visible)
+                throw new Exception("Unsupported device URL must not invalidate upload or reveal credentials");
         }
         address.PasteAddress("ftp://localhost:2121/elsewhere");
         if (user.Text != "" || password.Text != "") throw new Exception("Changing server must clear old credentials");
@@ -349,7 +375,7 @@ internal static class GuiSmokeTests
                     {
                         string input = Path.Combine(workDir, "M4 固件 文件.bin");
                         string output = Path.Combine(workDir, "联合 固件 包.bin");
-                        if (!form.Text.Contains("V0.0.11")) throw new Exception("Tool version must be independent from package format V1");
+                        if (!form.Text.Contains("V0.0.12")) throw new Exception("Tool version must be independent from package format V1");
                         if (form.Controls.Find("FtpToggle", true).Length != 0 || form.Controls.Find("FtpDialog", true).Length != 0)
                             throw new Exception("FTP must be inline without toggle or dialog");
                         if (form.Controls.Find("BrandHeader", true).Length != 0) throw new Exception("Redundant brand banner must not be present");

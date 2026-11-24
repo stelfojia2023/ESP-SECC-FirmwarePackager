@@ -17,6 +17,8 @@ namespace SeccFirmwarePackager
     public sealed class FtpUploadResult
     {
         public string RemoteUrl;
+        public string OcppDownloadUrl;
+        public string OcppDownloadProblem;
         public int StatusCode;
         public long Bytes;
     }
@@ -81,6 +83,44 @@ namespace SeccFirmwarePackager
             string prefix = location.DirectoryUri.AbsoluteUri;
             if (!prefix.EndsWith("/", StringComparison.Ordinal)) prefix += "/";
             return new Uri(prefix + Uri.EscapeDataString(fileName), UriKind.Absolute);
+        }
+
+        private static bool UserInfoChar(char value, bool password)
+        {
+            return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') ||
+                (value >= '0' && value <= '9') || "-._~!$&'()*+,;=".IndexOf(value) >= 0 ||
+                (password && value == ':');
+        }
+
+        // ESP-SECC receives at most 122 URL bytes through OCPP and its FTP URL
+        // parser does not decode percent escapes. Never offer a different path
+        // or credentials as a usable device URL; FTP upload itself is unaffected.
+        public static string OcppDownloadUrl(Uri target, string username, string password, out string problem)
+        {
+            problem = null;
+            password = password ?? "";
+            if (String.IsNullOrEmpty(username) || username.Length > 47 || password.Length > 47)
+            { problem = "账号或密码超过设备支持的长度。"; return null; }
+            foreach (char c in username)
+                if (!UserInfoChar(c, false)) { problem = "账号包含设备下载地址不支持的字符。"; return null; }
+            foreach (char c in password)
+                if (!UserInfoChar(c, true)) { problem = "密码包含设备下载地址不支持的字符。"; return null; }
+            if (target == null || !target.IsAbsoluteUri || target.Scheme != Uri.UriSchemeFtp ||
+                target.HostNameType == UriHostNameType.IPv6 || target.Host.Length > 95 ||
+                !String.IsNullOrEmpty(target.UserInfo) || !String.IsNullOrEmpty(target.Query) || !String.IsNullOrEmpty(target.Fragment))
+            { problem = "FTP 服务器地址不符合设备下载要求。"; return null; }
+            string baseUrl = target.AbsoluteUri;
+            string path = target.AbsolutePath;
+            int slash = path.LastIndexOf('/');
+            if (slash < 0 || path.Length - slash - 1 < 1 || path.Length - slash - 1 > 80 || slash > 128)
+            { problem = "FTP 目录或文件名超过设备支持的长度。"; return null; }
+            foreach (char c in baseUrl)
+                if (c > 0x7E || c <= 0x20 || c == '%' || c == '?' || c == '#' || c == '|' || c == '[' || c == ']')
+                { problem = "FTP 目录或文件名含有设备不支持的字符或转义，请调整后重新上传。"; return null; }
+            string result = "ftp://" + username + ":" + password + "@" + baseUrl.Substring("ftp://".Length);
+            if (result.Length > 122)
+            { problem = "下载地址超过设备支持的 122 字节，请缩短目录、文件名或账号。"; return null; }
+            return result;
         }
 
         // NLST is read-only. Report success only after the server confirms the
@@ -285,7 +325,10 @@ namespace SeccFirmwarePackager
                     if (code != 226 && code != 250)
                         throw new InvalidDataException("FTP 服务器未确认传输完成（状态 " + code + "）。");
                     completed = true;
-                    return new FtpUploadResult { RemoteUrl = target.AbsoluteUri, StatusCode = code, Bytes = sent };
+                    string problem;
+                    string downloadUrl = OcppDownloadUrl(target, username, password, out problem);
+                    return new FtpUploadResult { RemoteUrl = target.AbsoluteUri, OcppDownloadUrl = downloadUrl,
+                        OcppDownloadProblem = problem, StatusCode = code, Bytes = sent };
                 }
             }
             catch (WebException e)
